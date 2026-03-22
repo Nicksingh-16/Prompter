@@ -33,10 +33,12 @@ pub fn fix_local(text: &str) -> String {
     }
     
     // 3. Capitalize first letter if needed
-    if let Some(first_char) = fixed.chars().next() {
-        if first_char.is_lowercase() {
-            let mut c = fixed.chars();
-            fixed = first_char.to_uppercase().to_string() + c.next().map(|_| "").unwrap_or("") + &c.collect::<String>();
+    {
+        let mut chars = fixed.chars();
+        if let Some(first) = chars.next() {
+            if first.is_lowercase() {
+                fixed = first.to_uppercase().to_string() + chars.as_str();
+            }
         }
     }
     // 4. Common typo fixes

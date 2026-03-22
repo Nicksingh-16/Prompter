@@ -13,12 +13,12 @@
     "windows": [
       {
         "label": "main",
-        "title": "AI Overlay",
-        "width": 500,
-        "height": 560,
+        "title": "Prompter",
+        "width": 480,
+        "height": 580,
         "resizable": false,
         "fullscreen": false,
-        "decorations": true,
+        "decorations": false,
         "transparent": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
@@ -28,7 +28,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;"
+      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
     }
   },
   "bundle": {

@@ -75,13 +75,35 @@ fn extract_tokens(resp: &GeminiStreamResponse) -> Vec<String> {
 
 // ── Correct model URL ──────────────────────────────────────────────────────
 const GEMINI_MODEL: &str = "gemini-2.5-flash";
+const PROXY_URL: &str = "https://prompter-proxy.onrender.com";
+const USE_PROXY: bool = true;
+
+pub fn device_id() -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let computer = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".into());
+    let user = std::env::var("USERNAME").unwrap_or_else(|_| "unknown".into());
+    let mut hasher = DefaultHasher::new();
+    format!("{}:{}", computer, user).hash(&mut hasher);
+    format!("{:x}", hasher.finish())
+}
+
+fn build_url(stream: bool) -> String {
+    let endpoint = if stream { "streamGenerateContent" } else { "generateContent" };
+    if USE_PROXY {
+        format!("{}/v1beta/models/{}:{}", PROXY_URL, GEMINI_MODEL, endpoint)
+    } else {
+        format!("https://generativelanguage.googleapis.com/v1beta/models/{}:{}", GEMINI_MODEL, endpoint)
+    }
+}
 
 fn api_url(api_key: &str, stream: bool) -> String {
-    let endpoint = if stream { "streamGenerateContent" } else { "generateContent" };
-    format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:{}?key={}",
-        GEMINI_MODEL, endpoint, api_key
-    )
+    let url = build_url(stream);
+    if USE_PROXY {
+        url // Proxy appends key from its own pool
+    } else {
+        format!("{}?key={}", url, api_key)
+    }
 }
 
 // ── Streaming generation ───────────────────────────────────────────────────
@@ -107,9 +129,13 @@ pub async fn generate_stream(
         },
     };
 
-    let response = client
-        .post(&url)
-        .json(&request)
+    let mut request_builder = client.post(&url).json(&request);
+    
+    if USE_PROXY {
+        request_builder = request_builder.header("X-Device-ID", device_id());
+    }
+
+    let response = request_builder
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -117,15 +143,25 @@ pub async fn generate_stream(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        let error_msg = if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        
+        // Try to parse error message from proxy if applicable
+        let proxy_msg = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+            json["message"].as_str().map(|s| s.to_string())
+        } else {
+            None
+        };
+
+        let error_msg = if let Some(msg) = proxy_msg {
+            msg
+        } else if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             "Invalid API Key. Please check your settings.".to_string()
         } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            "Rate limit reached. Please try again in a moment.".to_string()
+            "Daily limit reached. Try again tomorrow or go Pro!".to_string()
         } else {
-            format!("Gemini API error ({}).", status)
+            format!("AI Service Error ({}).", status)
         };
         app.emit("ai_error", &error_msg).ok();
-        return Err(format!("Gemini API error {}: {}", status, body));
+        return Err(format!("AI error {}: {}", status, body));
     }
 
     let mut stream = response.bytes_stream();
