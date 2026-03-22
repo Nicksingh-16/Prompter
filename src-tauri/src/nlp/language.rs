@@ -121,10 +121,48 @@ pub fn analyze(text: &str) -> LanguageContext {
     let secondary_script = secondary.as_ref().map(|(s, _)| s.clone());
     let secondary_pct = secondary.as_ref().map(|(_, p)| *p).unwrap_or(0.0);
 
-    let is_mixed = primary_pct < 0.85 && secondary_pct > 0.15;
+    let is_mixed_script = primary_pct < 0.85 && secondary_pct > 0.15;
+
+    // Detect romanized Hinglish — Hindi written in Latin script.
+    // These words are all-Latin so script detection alone can't catch them.
+    // We match against a compact list of high-frequency Hindi words that
+    // almost never appear in native English text.
+    let is_romanized_hinglish = if matches!(primary_script, Script::Latin) {
+        let lower = text.to_lowercase();
+        let hinglish_markers: &[&str] = &[
+            "mujhe", "muje", "chahiye", "chahie", "abhi", "nahi", "nahin",
+            "karna", "karo", "karta", "karti", "karke", "karna",
+            "acha", "accha", "theek", "thik", "bilkul",
+            "bhai", "yaar", "bhaiya", "didi",
+            "iske", "uske", "inke", "unke", "isme", "usme",
+            "samajh", "samjha", "batao", "batana", "bata",
+            "matlab", "waise", "lekin", "aur", "toh", "tho",
+            "hai", "hain", "tha", "thi", "the",
+            "kyun", "kya", "kaise", "kaisa", "kitna",
+            "bahut", "thoda", "thodi", "bohot",
+            "apna", "apni", "apne", "mera", "meri", "mere",
+            "tumhara", "tumhari", "aapka", "aapki",
+            "dekho", "dekh", "suno", "sun",
+            "hoga", "hogi", "hoge", "rahega", "rahegi",
+        ];
+        let word_count = lower.split_whitespace().count();
+        let matches = hinglish_markers.iter()
+            .filter(|&&m| lower.split_whitespace().any(|w| w.trim_matches(|c: char| !c.is_alphabetic()) == m))
+            .count();
+        // Need at least 1 match in short text, 2 in longer text
+        matches >= 1 && (word_count <= 12 || matches >= 2)
+    } else {
+        false
+    };
+
+    let is_mixed = is_mixed_script || is_romanized_hinglish;
     let is_rtl = matches!(primary_script, Script::Arabic | Script::Hebrew);
 
-    let (family, candidates, romanization_hint) = script_metadata(&primary_script);
+    let (family, candidates, romanization_hint) = if is_romanized_hinglish && matches!(primary_script, Script::Latin) {
+        ("Indic-Romanized", "Hindi (romanized / Hinglish)", true)
+    } else {
+        script_metadata(&primary_script)
+    };
 
     LanguageContext {
         primary_script,

@@ -149,8 +149,12 @@ fn build_task_block(mode: &str, sub_mode: Option<&str>, ctx: &TextContext) -> St
         "Prompt" => {
             "You are an expert Prompt Engineer. Transform the following rough notes or \
              instructions into a high-quality, professional AI prompt. \
-             Use sections [Role], [Context], [Task], and [Constraints]. \
-             Output only the enhanced prompt, no explanation."
+             Structure your output with these labeled sections: \
+             **Role:** (who the AI should be), \
+             **Context:** (background information), \
+             **Task:** (what to do), \
+             **Constraints:** (rules to follow). \
+             Output only the enhanced prompt. No explanation, no preamble."
                 .into()
         }
         "Casual" => {
@@ -312,13 +316,12 @@ pub fn build_prompt(
     let constraint_block = build_constraint_block(ctx);
 
     let mut prompt = format!(
-        "[ROLE]\n\
-         You are an elite AI writing assistant embedded in a universal keyboard tool. \
+        "SYSTEM: You are an elite AI writing assistant embedded in a universal keyboard tool. \
          You process text captured from any application on the user's device.\n\n\
-         [LANGUAGE]\n{}\n\n\
-         [CONTEXT]\n{}\n\n\
-         [TASK]\n{}\n\n\
-         [CONSTRAINTS]\n{}",
+         LANGUAGE INFO: {}\n\n\
+         TEXT ANALYSIS: {}\n\n\
+         YOUR TASK: {}\n\n\
+         OUTPUT RULES: {}",
         language_block, context_block, task_block, constraint_block
     );
 

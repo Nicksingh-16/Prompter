@@ -35,10 +35,7 @@ async fn generate_ai_response(
 
     let api_key = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        keychain::get_api_key(&conn).map_err(|e| {
-            println!(">>> KEYCHAIN ERROR: {}", e);
-            format!("API Key Error: {}", e)
-        })?
+        keychain::get_api_key(&conn).unwrap_or_default()
     };
 
     let profile = {
@@ -134,6 +131,11 @@ fn delete_api_key(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn has_api_key(state: State<'_, AppState>) -> bool {
+    // Onboarding bypass check is now delegated to this command
+    // In proxy mode, we don't need the user to provide a key.
+    const USE_PROXY: bool = true; 
+    if USE_PROXY { return true; }
+
     let conn_res = state.db.lock();
     if let Ok(conn) = conn_res {
         keychain::get_api_key(&conn).is_ok()
@@ -146,7 +148,7 @@ fn has_api_key(state: State<'_, AppState>) -> bool {
 async fn list_available_models(state: State<'_, AppState>) -> Result<String, String> {
     let api_key = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        keychain::get_api_key(&conn)?
+        keychain::get_api_key(&conn).unwrap_or_default()
     };
     ai::list_models(&api_key).await
 }
@@ -183,36 +185,29 @@ fn get_communication_score(state: State<'_, AppState>) -> Result<db::CommReport,
     db::get_communication_report(&db).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_device_id() -> String {
+    ai::device_id()
+}
+
 // ── Overlay show logic ─────────────────────────────────────────────────────
-//
-// ORDER IS CRITICAL:
-//   1. capture_text() FIRST  — reads selected text while previous app owns focus
-//   2. nlp::analyze()        — <5ms, builds full TextContext
-//   3. emit()                — sends payload to frontend
-//   4. show() + set_focus()  — LAST, only now does our window steal focus
-//
-// Reversing 1 and 4 means our window grabs focus before the clipboard
-// copy fires, so capture reads our own empty webview instead.
 
-fn show_overlay(handle: &AppHandle) {
-    // 1. Capture while previous app still has OS focus
+fn show_overlay(handle: &AppHandle, force_mode: Option<&str>) {
+    // 1. Capture text
     let captured = capture::capture_text().unwrap_or_default();
-    println!(">>> OVERLAY: captured {} chars", captured.len());
-
-    // 2. Run local NLP pipeline synchronously (<5ms)
+    
+    // 2. Analyze
     let ctx = nlp::analyze(&captured);
-    println!(
-        ">>> NLP: intent={:?} conf={:.2} lang={}",
-        ctx.intent_result.primary.intent,
-        ctx.intent_result.primary.confidence,
-        ctx.language.candidate_languages,
-    );
 
-    // 3. Emit structured payload to frontend
-    let payload = serde_json::json!({ "text": captured, "context": ctx });
+    // 3. Emit structured payload
+    let payload = serde_json::json!({ 
+        "text": captured, 
+        "context": ctx,
+        "force_mode": force_mode
+    });
     handle.emit("text_captured", payload).ok();
 
-    // 4. Show window — AFTER capture and emit
+    // 4. Show window
     if let Some(window) = handle.get_webview_window("main") {
         let _ = window.center();
         let _ = window.show();
@@ -220,34 +215,30 @@ fn show_overlay(handle: &AppHandle) {
         let _ = window.set_always_on_top(true);
     }
 
-    // 5. Fire AI classifier async if local confidence is low (Layer 3)
+    // 5. Fire AI classifier async if confidence is low
     if nlp::intent::should_fire_ai_classifier(&ctx.intent_result) {
         let h2 = handle.clone();
         let text_clone = captured.clone();
         tauri::async_runtime::spawn(async move {
             let state = h2.state::<AppState>();
-            let api_key_res = {
+            let api_key = {
                 if let Ok(conn) = state.db.lock() {
-                    keychain::get_api_key(&conn)
+                    keychain::get_api_key(&conn).unwrap_or_default()
                 } else {
-                    Err("DB Lock Error".to_string())
+                    String::new()
                 }
             };
 
-            if let Ok(api_key) = api_key_res {
-                if let Some((intent, confidence, alts)) =
-                    ai::classify_intent(&api_key, &text_clone).await
-                {
-                    println!(">>> AI CLASSIFIER: intent={} conf={:.2}", intent, confidence);
-                    let refined = serde_json::json!({
-                        "intent": intent,
-                        "confidence": confidence,
-                        "alternatives": alts.iter().map(|(i, c)| {
-                            serde_json::json!({ "intent": i, "confidence": c })
-                        }).collect::<Vec<_>>()
-                    });
-                    h2.emit("intent_refined", refined).ok();
-                }
+            let key = if api_key.is_empty() { "proxy".to_string() } else { api_key };
+            if let Some((intent, confidence, alts)) = ai::classify_intent(&key, &text_clone).await {
+                let refined = serde_json::json!({
+                    "intent": intent,
+                    "confidence": confidence,
+                    "alternatives": alts.iter().map(|(i, c)| {
+                        serde_json::json!({ "intent": i, "confidence": c })
+                    }).collect::<Vec<_>>()
+                });
+                h2.emit("intent_refined", refined).ok();
             }
         });
     }
@@ -257,13 +248,10 @@ fn show_overlay(handle: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    println!(">>> STARTUP: run() entered");
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
-            println!(">>> STARTUP: setup() entered");
             let handle = app.handle().clone();
 
             // ── Database ────────────────────────────────────────────────
@@ -273,81 +261,67 @@ pub fn run() {
             handle.manage(AppState {
                 db: Arc::new(Mutex::new(conn)),
             });
-            println!(">>> STARTUP: database initialized");
 
             // ── Tray ────────────────────────────────────────────────────
-            let quit_i = MenuItem::with_id(&handle, "quit", "Quit Antigravity", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(&handle, "show", "Show Overlay",     true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(&handle, "quit", "Quit Prompter", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(&handle, "show", "Show Overlay", true, None::<&str>)?;
             let menu = Menu::with_items(&handle, &[&show_i, &quit_i])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .tooltip("Antigravity — Alt+K")
+                .tooltip("Prompter — Alt+K")
                 .on_menu_event({
                     let h = handle.clone();
                     move |_app, event| {
                         if event.id == "quit" {
                             h.exit(0);
                         } else if event.id == "show" {
-                            show_overlay(&h);
+                            show_overlay(&h, None);
                         }
                     }
                 })
                 .build(app)?;
-            println!(">>> STARTUP: tray icon built");
 
-            // ── Global hotkey Alt+K ─────────────────────────────────────
-            //
-            // Tauri v2 two-step registration:
-            //   Step 1 — on_shortcut() binds the handler
-            //   Step 2 — register() tells the OS to intercept the keypress
-            //
-            // The window starts HIDDEN (visible:false in tauri.conf.json).
-            // This hotkey is the only entry point. It fires from any app,
-            // any window state, including when overlay is completely hidden.
+            // ── Global hotkeys ───────────────────────────────────────────
+            let k_main   = Shortcut::new(Some(Modifiers::ALT), Code::KeyK);
+            let k_prompt = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyK);
+            let k_fix    = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyL);
 
-            let hotkey = Shortcut::new(Some(Modifiers::ALT), Code::KeyK);
-
-            handle.global_shortcut().on_shortcut(hotkey, {
+            handle.global_shortcut().on_shortcut(k_main, {
                 let h = handle.clone();
                 move |_app, _shortcut, event| {
-                    if event.state() != ShortcutState::Pressed {
-                        return;
-                    }
-                    println!(">>> HOTKEY: Alt+K fired");
-
-                    let Some(window) = h.get_webview_window("main") else {
-                        println!(">>> HOTKEY ERROR: 'main' window not found");
-                        return;
-                    };
-
-                    if window.is_visible().unwrap_or(false) {
-                        // Toggle: press Alt+K again to dismiss
-                        println!(">>> HOTKEY: hiding overlay");
-                        let _ = window.hide();
-                    } else {
-                        println!(">>> HOTKEY: showing overlay");
-                        show_overlay(&h);
+                    if event.state() != ShortcutState::Pressed { return; }
+                    if let Some(window) = h.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) { let _ = window.hide(); }
+                        else { show_overlay(&h, None); }
                     }
                 }
             })?;
 
-            if let Err(e) = handle.global_shortcut().register(hotkey) {
-                println!(">>> HOTKEY WARNING: Alt+K registration failed — {}. (Check if another app is using it or a ghost version is running)", e);
-            } else {
-                println!(">>> STARTUP: Alt+K registered — ready");
-            }
+            handle.global_shortcut().on_shortcut(k_prompt, {
+                let h = handle.clone();
+                move |_app, _shortcut, event| {
+                    if event.state() != ShortcutState::Pressed { return; }
+                    show_overlay(&h, Some("Prompt"));
+                }
+            })?;
 
-            // ── DO NOT call window.show() here ──────────────────────────
-            // Window starts hidden. Only hotkey or tray "Show Overlay" opens it.
+            handle.global_shortcut().on_shortcut(k_fix, {
+                let h = handle.clone();
+                move |_app, _shortcut, event| {
+                    if event.state() != ShortcutState::Pressed { return; }
+                    show_overlay(&h, Some("Correct"));
+                }
+            })?;
 
-            println!(">>> STARTUP: setup() complete");
+            let _ = handle.global_shortcut().register(k_main);
+            let _ = handle.global_shortcut().register(k_prompt);
+            let _ = handle.global_shortcut().register(k_fix);
+
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Intercept close button — hide instead of destroying the window.
-            // This keeps the process alive so the hotkey keeps working.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -367,6 +341,7 @@ pub fn run() {
             record_intent_correction,
             get_voice_profile,
             get_communication_score,
+            get_device_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
