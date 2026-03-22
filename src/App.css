@@ -1,0 +1,10 @@
+/*
+  App.css — intentionally empty.
+
+  ALL styles now live in index.css.
+  Having two CSS files both defining .glass-card, .mode-pill, input etc.
+  caused conflicting specificity and broken layout.
+
+  If you need component-scoped styles in future, add them here
+  with a component-specific class prefix (e.g. .app-header__btn).
+*/

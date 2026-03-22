@@ -1,0 +1,25 @@
+# Repository-specific ignores
+history.db
+team_voice.json
+models.json
+diag_models.rs
+Cargo.lock
+
+# Node
+node_modules/
+dist/
+.env
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap');
+
+:root {
+  --blue: #3b82f6;
+  --blue-glow: rgba(59, 130, 246, 0.35);
+  --surface: rgba(14, 14, 18, 0.88);
+  --border: rgba(255, 255, 255, 0.09);
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-muted: rgba(255, 255, 255, 0.45);
+  --text-dim: rgba(255, 255, 255, 0.25);
+
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: var(--text-primary);
+  background-color: transparent;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* ── Root layout — THE centering fix ───────────────────────────────────── */
+/* 
+  The original bug: body had `place-items: center` but no explicit height,
+  so the grid had zero height and centering had nowhere to work.
+  Fix: use an explicit 100dvh flex container that truly fills the window.
+*/
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;       /* dynamic viewport height — handles OS chrome */
+}
+
+#root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Glass card ─────────────────────────────────────────────────────────── */
+.glass-card {
+  background: var(--surface);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 0.5px rgba(255,255,255,0.06) inset,
+    0 16px 48px 0 rgba(0, 0, 0, 0.7),
+    0 0 40px -8px var(--blue-glow);
+  width: 500px;
+  min-height: 340px;
+  max-height: 560px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  /* NO margin:auto — centering is handled by the flex parents above */
+}
+
+/* ── Mode pills ─────────────────────────────────────────────────────────── */
+.mode-pill {
+  padding: 5px 13px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mode-pill:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,0.15);
+}
+
+.mode-pill.active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+  box-shadow: 0 0 14px var(--blue-glow);
+}
+
+.mode-pill:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Token / output container ───────────────────────────────────────────── */
+.token-container {
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #cbd5e1;
+  flex-grow: 1;
+  overflow-y: auto;
+  margin-top: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  white-space: pre-wrap;
+  min-height: 80px;
+}
+
+.token-container::-webkit-scrollbar { width: 5px; }
+.token-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+/* ── Blinking cursor ────────────────────────────────────────────────────── */
+.blinking-cursor::after {
+  content: "▊";
+  animation: blink 1s step-end infinite;
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--blue);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ── Text input ─────────────────────────────────────────────────────────── */
+input[type="text"] {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  padding: 9px 13px;
+  color: var(--text-primary);
+  width: 100%;
+  outline: none;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="text"]:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+}
+
+input[type="text"]::placeholder {
+  color: var(--text-dim);
+}

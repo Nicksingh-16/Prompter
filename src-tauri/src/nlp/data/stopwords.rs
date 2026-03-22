@@ -1,0 +1,28 @@
+/// ~150 common English stopwords used as inverse-frequency approximation for TF-IDF.
+/// Words NOT in this list score 1.0; words in this list score 0.0.
+pub const STOPWORDS: &[&str] = &[
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "up", "about", "into", "through", "during",
+    "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might",
+    "must", "shall", "can", "need",
+    "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us",
+    "them", "my", "your", "his", "its", "our", "their",
+    "this", "that", "these", "those", "who", "which", "what", "whose", "whom",
+    "when", "where", "why", "how", "if", "then", "than", "so", "as",
+    "not", "no", "nor", "yet", "both", "either", "neither", "each", "every",
+    "all", "any", "few", "more", "most", "other", "some", "such",
+    "only", "same", "also", "just", "still", "well", "even", "back",
+    "there", "here", "now", "always", "never", "very", "too", "really",
+    "quite", "much", "many", "little",
+    "one", "two", "three", "first", "last", "new", "old", "good", "big",
+    "while", "after", "before", "since", "because", "although", "however",
+    "therefore", "thus", "already", "again", "once",
+    "say", "get", "make", "go", "know", "think", "see", "come", "want",
+    "look", "use", "find", "give", "tell", "work", "call", "try", "ask",
+    "feel", "become", "leave", "put", "mean", "keep", "let", "begin",
+    "seem", "show", "hear", "run", "move", "live", "hold", "bring",
+    "write", "provide", "sit", "stand", "lose", "pay", "meet",
+    "set", "learn", "change", "lead", "understand", "follow", "stop",
+    "re", "ve", "ll", "am", "been",
+];
