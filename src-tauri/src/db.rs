@@ -342,3 +342,30 @@ pub fn get_communication_report(conn: &Connection) -> Result<CommReport> {
         friction_hotspots: friction,
     })
 }
+// ── History read-back ──────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize)]
+pub struct HistoryEntry {
+    pub id: i64,
+    pub timestamp: String,
+    pub input_preview: String,
+    pub mode: String,
+    pub output: String,
+}
+
+pub fn get_recent_history(conn: &Connection, limit: i64) -> Result<Vec<HistoryEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, timestamp, IFNULL(input_preview,''), IFNULL(mode,''), IFNULL(output,'')
+         FROM history ORDER BY timestamp DESC LIMIT ?1"
+    )?;
+    let rows = stmt.query_map(params![limit], |row| {
+        Ok(HistoryEntry {
+            id:            row.get(0)?,
+            timestamp:     row.get(1)?,
+            input_preview: row.get(2)?,
+            mode:          row.get(3)?,
+            output:        row.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
