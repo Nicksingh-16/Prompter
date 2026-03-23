@@ -37,7 +37,6 @@ async fn generate_ai_response(
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         keychain::get_api_key(&conn).unwrap_or_default()
     };
-
     let profile = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         db::get_voice_profile(&db).unwrap_or_default()
@@ -52,23 +51,20 @@ async fn generate_ai_response(
     };
 
     let system_prompt = nlp::prompt::build_prompt(
-        &app,
-        &ctx,
-        &mode,
+        &app, &ctx, &mode,
         sub_mode.as_deref().or(custom_prompt.as_deref()),
-        &profile,
-        &memory,
+        &profile, &memory,
     );
 
     let res = ai::generate_stream(app.clone(), &api_key, &system_prompt, &text).await;
 
-    if res.is_ok() {
+    if let Ok(ref output) = res {
         let conn = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
         let _ = db::save_history(
             &conn,
             &text[..text.len().min(200)],
             &mode,
-            "Generated successfully",
+            &output[..output.len().min(500)],
             ctx.tone,
             ctx.formality,
         );
@@ -78,7 +74,7 @@ async fn generate_ai_response(
         }
     }
 
-    res
+    res.map(|_| ())
 }
 
 #[tauri::command]
@@ -92,7 +88,6 @@ fn inject_result(app: tauri::AppHandle, text: String) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
-    // Tiny delay to ensure window is gone from OS focus stack
     std::thread::sleep(std::time::Duration::from_millis(100));
     inject::inject_text(text);
 }
@@ -104,16 +99,14 @@ fn generate_local_response(
     text: String,
     _sub_mode: Option<String>,
 ) -> String {
-    let ctx = nlp::analyze(&text);
+    let ctx    = nlp::analyze(&text);
     let result = nlp::local_engine::transform(&mode, &ctx);
-
     if let Ok(conn) = state.db.lock() {
         let _ = db::observe_session(&conn, &text, ctx.tone, ctx.formality, ctx.word_count);
         for (name, etype) in &ctx.detected_entities {
             let _ = db::record_entity_mention(&conn, etype, name, ctx.tone, ctx.formality);
         }
     }
-
     result
 }
 
@@ -130,18 +123,9 @@ fn delete_api_key(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn has_api_key(state: State<'_, AppState>) -> bool {
-    // Onboarding bypass check is now delegated to this command
-    // In proxy mode, we don't need the user to provide a key.
-    const USE_PROXY: bool = true; 
-    if USE_PROXY { return true; }
-
-    let conn_res = state.db.lock();
-    if let Ok(conn) = conn_res {
-        keychain::get_api_key(&conn).is_ok()
-    } else {
-        false
-    }
+fn has_api_key(_state: State<'_, AppState>) -> bool {
+    // Proxy mode: no user key needed, always return true to skip onboarding
+    true
 }
 
 #[tauri::command]
@@ -186,28 +170,41 @@ fn get_communication_score(state: State<'_, AppState>) -> Result<db::CommReport,
 }
 
 #[tauri::command]
+fn get_history(state: State<'_, AppState>, limit: i64) -> Result<Vec<db::HistoryEntry>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_recent_history(&db, limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_config_value(state: State<'_, AppState>, key: String) -> Result<String, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_config(&db, &key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_config_value(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db::set_config(&db, &key, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_device_id() -> String {
     ai::device_id()
 }
 
-// ── Overlay show logic ─────────────────────────────────────────────────────
+// ── Show overlay (Alt+K) ───────────────────────────────────────────────────
+// Captures selected text, shows the overlay window, lets user choose mode.
 
-fn show_overlay(handle: &AppHandle, force_mode: Option<&str>) {
-    // 1. Capture text
+fn show_overlay(handle: &AppHandle) {
     let captured = capture::capture_text().unwrap_or_default();
-    
-    // 2. Analyze
-    let ctx = nlp::analyze(&captured);
+    let ctx      = nlp::analyze(&captured);
 
-    // 3. Emit structured payload
-    let payload = serde_json::json!({ 
-        "text": captured, 
+    let payload = serde_json::json!({
+        "text":    captured,
         "context": ctx,
-        "force_mode": force_mode
     });
     handle.emit("text_captured", payload).ok();
 
-    // 4. Show window
     if let Some(window) = handle.get_webview_window("main") {
         let _ = window.center();
         let _ = window.show();
@@ -215,25 +212,22 @@ fn show_overlay(handle: &AppHandle, force_mode: Option<&str>) {
         let _ = window.set_always_on_top(true);
     }
 
-    // 5. Fire AI classifier async if confidence is low
+    // Fire AI classifier async if NLP confidence is low
     if nlp::intent::should_fire_ai_classifier(&ctx.intent_result) {
-        let h2 = handle.clone();
+        let h2         = handle.clone();
         let text_clone = captured.clone();
         tauri::async_runtime::spawn(async move {
-            let state = h2.state::<AppState>();
+            let state   = h2.state::<AppState>();
             let api_key = {
                 if let Ok(conn) = state.db.lock() {
                     keychain::get_api_key(&conn).unwrap_or_default()
-                } else {
-                    String::new()
-                }
+                } else { String::new() }
             };
-
             let key = if api_key.is_empty() { "proxy".to_string() } else { api_key };
             if let Some((intent, confidence, alts)) = ai::classify_intent(&key, &text_clone).await {
                 let refined = serde_json::json!({
-                    "intent": intent,
-                    "confidence": confidence,
+                    "intent":       intent,
+                    "confidence":   confidence,
                     "alternatives": alts.iter().map(|(i, c)| {
                         serde_json::json!({ "intent": i, "confidence": c })
                     }).collect::<Vec<_>>()
@@ -242,6 +236,78 @@ fn show_overlay(handle: &AppHandle, force_mode: Option<&str>) {
             }
         });
     }
+}
+
+// ── Silent run (Alt+Shift+K / Alt+Shift+L) ────────────────────────────────
+// Captures → generates → injects. Window never shown. Fully background.
+
+fn run_silent(handle: &AppHandle, mode: &str) {
+    let h    = handle.clone();
+    let mode = mode.to_string();
+
+    tauri::async_runtime::spawn(async move {
+        // 1. Capture selected text
+        let text = capture::capture_text().unwrap_or_default();
+        if text.trim().is_empty() { return; }
+
+        let ctx   = nlp::analyze(&text);
+        let state = h.state::<AppState>();
+
+        // 2. Load voice profile + context memory
+        let profile = {
+            if let Ok(db) = state.db.lock() {
+                db::get_voice_profile(&db).unwrap_or_default()
+            } else { vec![] }
+        };
+        let memory = {
+            if let Ok(db) = state.db.lock() {
+                let names: Vec<String> = ctx.detected_entities.iter()
+                    .map(|(n, _)| n.clone()).collect();
+                db::get_entities_context(&db, &names).unwrap_or_default()
+            } else { vec![] }
+        };
+
+        // 3. Build system prompt via NLP pipeline (same as overlay path)
+        let system_prompt = nlp::prompt::build_prompt(&h, &ctx, &mode, None, &profile, &memory);
+
+        // 4. Get API key (empty string is fine — proxy ignores it)
+        let api_key = {
+            if let Ok(db) = state.db.lock() {
+                keychain::get_api_key(&db).unwrap_or_default()
+            } else { String::new() }
+        };
+
+        // 5. Generate silently (non-streaming, no window events)
+        match ai::generate_silent(&api_key, &system_prompt, &text).await {
+            Ok(result) => {
+                // 6. Inject result directly into the source app
+                // inject_text has a 300ms delay built in — that's intentional,
+                // it gives the OS time to return focus to the source window
+                // after the hotkey releases.
+                inject::inject_text(result.clone());
+
+                // 7. Save to history so it shows up in the overlay panel
+                if let Ok(db) = state.db.lock() {
+                    let _ = db::save_history(
+                        &db,
+                        &text[..text.len().min(200)],
+                        &mode,
+                        &result[..result.len().min(500)],
+                        ctx.tone,
+                        ctx.formality,
+                    );
+                    let _ = db::observe_session(&db, &text, ctx.tone, ctx.formality, ctx.word_count);
+                    for (name, etype) in &ctx.detected_entities {
+                        let _ = db::record_entity_mention(&db, etype, name, ctx.tone, ctx.formality);
+                    }
+                }
+            }
+            Err(e) => {
+                // Silent failure — log to console, don't crash or show overlay
+                eprintln!("Silent transform failed (mode={}): {}", mode, e);
+            }
+        }
+    });
 }
 
 // ── App entry point ────────────────────────────────────────────────────────
@@ -264,8 +330,8 @@ pub fn run() {
 
             // ── Tray ────────────────────────────────────────────────────
             let quit_i = MenuItem::with_id(&handle, "quit", "Quit Prompter", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(&handle, "show", "Show Overlay", true, None::<&str>)?;
-            let menu = Menu::with_items(&handle, &[&show_i, &quit_i])?;
+            let show_i = MenuItem::with_id(&handle, "show", "Show Overlay",  true, None::<&str>)?;
+            let menu   = Menu::with_items(&handle, &[&show_i, &quit_i])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -274,44 +340,52 @@ pub fn run() {
                 .on_menu_event({
                     let h = handle.clone();
                     move |_app, event| {
-                        if event.id == "quit" {
-                            h.exit(0);
-                        } else if event.id == "show" {
-                            show_overlay(&h, None);
-                        }
+                        if event.id == "quit"      { h.exit(0); }
+                        else if event.id == "show" { show_overlay(&h); }
                     }
                 })
                 .build(app)?;
 
             // ── Global hotkeys ───────────────────────────────────────────
-            let k_main   = Shortcut::new(Some(Modifiers::ALT), Code::KeyK);
+            //
+            //  Alt+K          → show overlay (manual mode selection)
+            //  Alt+Shift+K    → silent: capture → Prompt → inject
+            //  Alt+Shift+L    → silent: capture → Correct → inject
+            //
+            let k_main   = Shortcut::new(Some(Modifiers::ALT),                Code::KeyK);
             let k_prompt = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyK);
             let k_fix    = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyL);
 
+            // Alt+K — toggle overlay
             handle.global_shortcut().on_shortcut(k_main, {
                 let h = handle.clone();
                 move |_app, _shortcut, event| {
                     if event.state() != ShortcutState::Pressed { return; }
                     if let Some(window) = h.get_webview_window("main") {
-                        if window.is_visible().unwrap_or(false) { let _ = window.hide(); }
-                        else { show_overlay(&h, None); }
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            show_overlay(&h);
+                        }
                     }
                 }
             })?;
 
+            // Alt+Shift+K — silent Prompt transform + auto-inject
             handle.global_shortcut().on_shortcut(k_prompt, {
                 let h = handle.clone();
                 move |_app, _shortcut, event| {
                     if event.state() != ShortcutState::Pressed { return; }
-                    show_overlay(&h, Some("Prompt"));
+                    run_silent(&h, "Prompt");
                 }
             })?;
 
+            // Alt+Shift+L — silent Correct/rewrite transform + auto-inject
             handle.global_shortcut().on_shortcut(k_fix, {
                 let h = handle.clone();
                 move |_app, _shortcut, event| {
                     if event.state() != ShortcutState::Pressed { return; }
-                    show_overlay(&h, Some("Correct"));
+                    run_silent(&h, "Correct");
                 }
             })?;
 
@@ -342,6 +416,9 @@ pub fn run() {
             get_voice_profile,
             get_communication_score,
             get_device_id,
+            get_history,
+            get_config_value,
+            set_config_value,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

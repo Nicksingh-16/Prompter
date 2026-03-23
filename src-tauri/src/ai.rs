@@ -73,20 +73,27 @@ fn extract_tokens(resp: &GeminiStreamResponse) -> Vec<String> {
     tokens
 }
 
-// ── Correct model URL ──────────────────────────────────────────────────────
+// ── Config ─────────────────────────────────────────────────────────────────
+
 const GEMINI_MODEL: &str = "gemini-2.5-flash";
 const PROXY_URL: &str = "https://prompter-proxy.onrender.com";
 const USE_PROXY: bool = true;
 
+// ── Device ID — FNV-1a, stable across Rust versions ───────────────────────
+
 pub fn device_id() -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
     let computer = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".into());
-    let user = std::env::var("USERNAME").unwrap_or_else(|_| "unknown".into());
-    let mut hasher = DefaultHasher::new();
-    format!("{}:{}", computer, user).hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    let user     = std::env::var("USERNAME").unwrap_or_else(|_| "unknown".into());
+    let input    = format!("{}:{}", computer, user);
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in input.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000000001b3);
+    }
+    format!("{:x}", hash)
 }
+
+// ── URL helpers ────────────────────────────────────────────────────────────
 
 fn build_url(stream: bool) -> String {
     let endpoint = if stream { "streamGenerateContent" } else { "generateContent" };
@@ -100,107 +107,98 @@ fn build_url(stream: bool) -> String {
 fn api_url(api_key: &str, stream: bool) -> String {
     let url = build_url(stream);
     if USE_PROXY {
-        url // Proxy appends key from its own pool
+        url
     } else {
         format!("{}?key={}", url, api_key)
     }
 }
 
-// ── Streaming generation ───────────────────────────────────────────────────
-
-pub async fn generate_stream(
-    app: AppHandle,
-    api_key: &str,
-    system_prompt: &str,
-    user_text: &str,
-) -> Result<(), String> {
+fn make_request(api_key: &str, system_prompt: &str, user_text: &str, stream: bool, max_tokens: i32) -> (Client, String, GeminiRequest) {
     let client = Client::new();
-    let url = api_url(api_key, true);
-
+    let url    = api_url(api_key, stream);
     let full_prompt = format!("{}\n\nInput: {}", system_prompt, user_text);
-
     let request = GeminiRequest {
         contents: vec![Content {
             parts: vec![Part { text: full_prompt }],
         }],
         generationConfig: GenerationConfig {
             temperature: 0.7,
-            maxOutputTokens: 2048,
+            maxOutputTokens: max_tokens,
         },
     };
+    (client, url, request)
+}
 
-    let mut request_builder = client.post(&url).json(&request);
-    
+// ── Streaming generation — used by overlay (Alt+K) ────────────────────────
+
+pub async fn generate_stream(
+    app: AppHandle,
+    api_key: &str,
+    system_prompt: &str,
+    user_text: &str,
+) -> Result<String, String> {
+    let (client, url, request) = make_request(api_key, system_prompt, user_text, true, 2048);
+
+    let mut req = client.post(&url).json(&request);
     if USE_PROXY {
-        request_builder = request_builder.header("X-Device-ID", device_id());
+        req = req.header("X-Device-ID", device_id());
     }
 
-    let response = request_builder
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+    let response = req.send().await.map_err(|e| format!("Request failed: {}", e))?;
 
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        
-        // Try to parse error message from proxy if applicable
-        let proxy_msg = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
-            json["message"].as_str().map(|s| s.to_string())
-        } else {
-            None
-        };
-
-        let error_msg = if let Some(msg) = proxy_msg {
-            msg
-        } else if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            "Invalid API Key. Please check your settings.".to_string()
-        } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            "Daily limit reached. Try again tomorrow or go Pro!".to_string()
-        } else {
-            format!("AI Service Error ({}).", status)
-        };
+        let body   = response.text().await.unwrap_or_default();
+        let proxy_msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|j| j["message"].as_str().map(|s| s.to_string()));
+        let error_msg = proxy_msg.unwrap_or_else(|| {
+            if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+                "Invalid API Key. Please check your settings.".to_string()
+            } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                "Daily limit reached. Try again tomorrow or go Pro!".to_string()
+            } else {
+                format!("AI Service Error ({}).", status)
+            }
+        });
         app.emit("ai_error", &error_msg).ok();
         return Err(format!("AI error {}: {}", status, body));
     }
 
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
+    let mut stream      = response.bytes_stream();
+    let mut buffer      = String::new();
+    let mut full_output = String::new();
 
     while let Some(item) = stream.next().await {
         let chunk = item.map_err(|e| format!("Stream error: {}", e))?;
-        let text = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&text);
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         let mut start_idx = 0;
         while let Some(obj_start) = buffer[start_idx..].find('{') {
             let actual_start = start_idx + obj_start;
-            let mut depth = 0;
-            let mut obj_end = None;
+            let mut depth     = 0;
+            let mut obj_end   = None;
             let mut in_string = false;
-            let mut escaped = false;
+            let mut escaped   = false;
 
             for (i, c) in buffer[actual_start..].chars().enumerate() {
                 if escaped { escaped = false; continue; }
                 match c {
-                    '\\'  => escaped = true,
-                    '"'   => in_string = !in_string,
-                    '{'  if !in_string => depth += 1,
-                    '}'  if !in_string => {
+                    '\\'             => escaped   = true,
+                    '"'              => in_string = !in_string,
+                    '{' if !in_string => depth   += 1,
+                    '}' if !in_string => {
                         depth -= 1;
-                        if depth == 0 {
-                            obj_end = Some(actual_start + i + 1);
-                            break;
-                        }
+                        if depth == 0 { obj_end = Some(actual_start + i + 1); break; }
                     }
                     _ => {}
                 }
             }
 
             if let Some(end) = obj_end {
-                let json_obj = &buffer[actual_start..end];
-                if let Ok(resp) = serde_json::from_str::<GeminiStreamResponse>(json_obj) {
+                if let Ok(resp) = serde_json::from_str::<GeminiStreamResponse>(&buffer[actual_start..end]) {
                     for token in extract_tokens(&resp) {
+                        full_output.push_str(&token);
                         app.emit("ai_token", &token).ok();
                     }
                 }
@@ -215,36 +213,72 @@ pub async fn generate_stream(
     }
 
     app.emit("ai_stream_end", ()).ok();
-    Ok(())
+    Ok(full_output)
+}
+
+// ── Silent generation — used by sub-hotkeys (Alt+Shift+K / Alt+Shift+L) ───
+// No window, no streaming events. Captures → generates → returns plain text.
+// Uses the non-streaming Gemini endpoint for simplicity and speed.
+
+pub async fn generate_silent(
+    api_key: &str,
+    system_prompt: &str,
+    user_text: &str,
+) -> Result<String, String> {
+    let (client, url, request) = make_request(api_key, system_prompt, user_text, false, 2048);
+
+    let mut req = client.post(&url).json(&request);
+    if USE_PROXY {
+        req = req.header("X-Device-ID", device_id());
+    }
+
+    let response = req.send().await.map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body   = response.text().await.unwrap_or_default();
+        return Err(format!("AI error {}: {}", status, body));
+    }
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("JSON parse error: {}", e))?;
+
+    let text = body["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    if text.is_empty() {
+        return Err("Empty response from AI".to_string());
+    }
+
+    Ok(text)
 }
 
 // ── Intent classifier (Layer 3 — Deep Intent) ─────────────────────────────
 
 #[derive(Deserialize)]
 struct ClassifierResponse {
-    intent: Option<String>,
-    confidence: Option<f32>,
+    intent:       Option<String>,
+    confidence:   Option<f32>,
     alternatives: Option<Vec<ClassifierAlt>>,
 }
 #[derive(Deserialize)]
 struct ClassifierAlt {
-    intent: Option<String>,
+    intent:     Option<String>,
     confidence: Option<f32>,
 }
 
 pub async fn classify_intent(api_key: &str, text: &str) -> Option<(String, f32, Vec<(String, f32)>)> {
     let client = Client::new();
-    let url = api_url(api_key, false);
+    let url    = api_url(api_key, false);
 
-    let prompt = build_classifier_prompt(text);
+    let prompt  = build_classifier_prompt(text);
     let request = GeminiRequest {
-        contents: vec![Content {
-            parts: vec![Part { text: prompt }],
-        }],
-        generationConfig: GenerationConfig {
-            temperature: 0.0, // deterministic for classification
-            maxOutputTokens: 200,
-        },
+        contents: vec![Content { parts: vec![Part { text: prompt }] }],
+        generationConfig: GenerationConfig { temperature: 0.0, maxOutputTokens: 200 },
     };
 
     let response = client.post(&url).json(&request).send().await.ok()?;
@@ -255,7 +289,6 @@ pub async fn classify_intent(api_key: &str, text: &str) -> Option<(String, f32, 
 }
 
 fn build_classifier_prompt(text: &str) -> String {
-    // Truncate to 500 chars to minimize latency for classification call
     let snippet: String = text.chars().take(500).collect();
     format!(
         "You are a text classification system. Classify the following text into exactly ONE of: \
@@ -269,34 +302,30 @@ fn build_classifier_prompt(text: &str) -> String {
 }
 
 fn parse_classifier_response(body: &str) -> Option<(String, f32, Vec<(String, f32)>)> {
-    // Find the first valid JSON object in the response (model may wrap it in markdown)
     let start = body.find('{')?;
-    let mut depth = 0;
-    let mut end = start;
+    let mut depth     = 0;
+    let mut end       = start;
     let chars: Vec<char> = body.chars().collect();
     let mut in_string = false;
-    let mut escaped = false;
+    let mut escaped   = false;
     for (i, &c) in chars.iter().enumerate().skip(start) {
         if escaped { escaped = false; continue; }
         match c {
-            '\\'  => escaped = true,
-            '"'   => in_string = !in_string,
-            '{'  if !in_string => depth += 1,
-            '}'  if !in_string => {
+            '\\'             => escaped   = true,
+            '"'              => in_string = !in_string,
+            '{' if !in_string => depth   += 1,
+            '}' if !in_string => {
                 depth -= 1;
                 if depth == 0 { end = i + 1; break; }
             }
             _ => {}
         }
     }
-    let json_slice = body.get(start..end)?;
-    let parsed: ClassifierResponse = serde_json::from_str(json_slice).ok()?;
-    let intent = parsed.intent?;
+    let parsed: ClassifierResponse = serde_json::from_str(body.get(start..end)?).ok()?;
+    let intent     = parsed.intent?;
     let confidence = parsed.confidence.unwrap_or(0.5);
     let alts: Vec<(String, f32)> = parsed
-        .alternatives
-        .unwrap_or_default()
-        .into_iter()
+        .alternatives.unwrap_or_default().into_iter()
         .filter_map(|a| Some((a.intent?, a.confidence.unwrap_or(0.0))))
         .collect();
     Some((intent, confidence, alts))
