@@ -137,7 +137,7 @@ pub async fn generate_stream(
     system_prompt: &str,
     user_text: &str,
 ) -> Result<String, String> {
-    let (client, url, request) = make_request(api_key, system_prompt, user_text, true, 2048);
+    let (client, url, request) = make_request(api_key, system_prompt, user_text, true, 4096);
 
     let mut req = client.post(&url).json(&request);
     if USE_PROXY {
@@ -225,7 +225,7 @@ pub async fn generate_silent(
     system_prompt: &str,
     user_text: &str,
 ) -> Result<String, String> {
-    let (client, url, request) = make_request(api_key, system_prompt, user_text, false, 2048);
+    let (client, url, request) = make_request(api_key, system_prompt, user_text, false, 4096);
 
     let mut req = client.post(&url).json(&request);
     if USE_PROXY {

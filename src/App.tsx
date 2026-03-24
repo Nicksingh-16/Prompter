@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Settings, Sparkles, Send, CheckCircle2, Copy, Zap, History, X, ChevronRight } from 'lucide-react'
+import { Settings, Sparkles, Send, CheckCircle2, Copy, Zap, History, X, ChevronRight, Minus, Square } from 'lucide-react'
 import './index.css'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -297,7 +298,7 @@ const FirstRun = ({ onDone }: { onDone: () => void }) => (
         <Sparkles size={20} color="#fff" />
       </div>
       <div>
-        <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>Prompter</div>
+        <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>SnapText</div>
         <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>AI overlay for every app</div>
       </div>
     </div>
@@ -319,10 +320,10 @@ const FirstRun = ({ onDone }: { onDone: () => void }) => (
 
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
       {[
-        { hotkey: 'Alt+K',   desc: 'Open overlay — works from any app, any field' },
+        { hotkey: 'Alt+K', desc: 'Open overlay — works from any app, any field' },
         { hotkey: 'Alt+⇧+K', desc: 'Instantly transform as a structured prompt' },
         { hotkey: 'Alt+⇧+L', desc: 'Fix grammar, spelling, or translate' },
-        { hotkey: 'Tab',     desc: 'Insert the result back where you typed' },
+        { hotkey: 'Tab', desc: 'Insert the result back where you typed' },
       ].map(({ hotkey, desc }) => (
         <div key={hotkey} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <kbd style={{
@@ -358,22 +359,22 @@ const FirstRun = ({ onDone }: { onDone: () => void }) => (
 // ── App ────────────────────────────────────────────────────────────────────
 
 function App() {
-  const [capturedText, setCapturedText]     = useState('')
-  const [nlpContext, setNlpContext]         = useState<TextContext | null>(null)
-  const [intentResult, setIntentResult]     = useState<IntentResult | null>(null)
-  const [isRefined, setIsRefined]           = useState(false)
+  const [capturedText, setCapturedText] = useState('')
+  const [nlpContext, setNlpContext] = useState<TextContext | null>(null)
+  const [intentResult, setIntentResult] = useState<IntentResult | null>(null)
+  const [isRefined, setIsRefined] = useState(false)
   const [userInteracted, setUserInteracted] = useState(false)
-  const [hasKey, setHasKey]                 = useState<boolean | null>(null)
-  const [firstRunDone, setFirstRunDone]     = useState<boolean | null>(null) // null=loading
-  const [selectedMode, setSelectedMode]     = useState<Mode>('Prompt')
-  const [subIntent, setSubIntent]           = useState<string | null>(null)
-  const [customPrompt, setCustomPrompt]     = useState('')
+  const [hasKey, setHasKey] = useState<boolean | null>(null)
+  const [firstRunDone, setFirstRunDone] = useState<boolean | null>(null) // null=loading
+  const [selectedMode, setSelectedMode] = useState<Mode>('Prompt')
+  const [subIntent, setSubIntent] = useState<string | null>(null)
+  const [customPrompt, setCustomPrompt] = useState('')
   const [streamingResult, setStreamingResult] = useState('')
-  const [isGenerating, setIsGenerating]     = useState(false)
-  const [error, setError]                   = useState('')
-  const [useLocal, setUseLocal]             = useState(false)
-  const [showHistory, setShowHistory]       = useState(false)
-  const [usage, setUsage]                   = useState<{ used: number; cap: number }>({ used: 0, cap: FREE_DAILY_CAP })
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState('')
+  const [useLocal, setUseLocal] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [usage, setUsage] = useState<{ used: number; cap: number }>({ used: 0, cap: FREE_DAILY_CAP })
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // ── Usage helper ─────────────────────────────────────────────────────────
@@ -390,15 +391,44 @@ function App() {
 
   // ── Boot ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    invoke<boolean>('has_api_key').then(setHasKey)
+    const init = async () => {
+      console.log('Finalizing boot sequence...');
 
-    // Priority 4: check first_run_done in SQLite config
-    invoke<string>('get_config_value', { key: 'first_run_done' })
-      .then(() => setFirstRunDone(true))
-      .catch(() => setFirstRunDone(false)) // missing key = first run
+      // 1. has_api_key: Default to true in proxy mode, but try to fetch
+      try {
+        const keyStatus = await invoke<boolean>('has_api_key');
+        setHasKey(keyStatus);
+      } catch (e) {
+        console.warn('has_api_key failed, defaulting to true:', e);
+        setHasKey(true);
+      }
 
-    // Priority 3: fetch usage immediately on app start
-    refreshUsage()
+      // 2. first_run_done: Check config with a fallback
+      try {
+        await invoke<string>('get_config_value', { key: 'first_run_done' });
+        setFirstRunDone(true);
+      } catch (e) {
+        console.log('First run check finished (key likely missing or DB init):', e);
+        setFirstRunDone(false);
+      }
+
+      // 3. fetch usage
+      refreshUsage();
+    };
+
+    init().catch(e => {
+      console.error('Boot escaped init block:', e);
+      setHasKey(true);
+      setFirstRunDone(false);
+    });
+
+    // Safety timeout: if backend is totally unresponsive, force-start after 3.5s
+    const timer = setTimeout(() => {
+      setHasKey(prev => prev ?? true);
+      setFirstRunDone(prev => prev ?? false);
+    }, 3500);
+
+    return () => clearTimeout(timer);
   }, [])
 
   // ── Event listeners ──────────────────────────────────────────────────────
@@ -432,7 +462,7 @@ function App() {
     })
 
     const unToken = listen<string>('ai_token', e => setStreamingResult(prev => prev + e.payload))
-    const unEnd   = listen('ai_stream_end', () => {
+    const unEnd = listen('ai_stream_end', () => {
       setIsGenerating(false)
       refreshUsage() // Priority 3: update count after every successful transform
     })
@@ -528,178 +558,206 @@ function App() {
   // Priority 4: first-run screen
   if (!firstRunDone) return <FirstRun onDone={handleFirstRunDone} />
 
-  const canGenerate  = !!capturedText && !isGenerating && (selectedMode !== 'Custom' || !!customPrompt)
-  const isNonLatin   = nlpContext && !['Latin', 'Unknown', ''].includes(nlpContext.language.primary_script)
-  const isMixed      = nlpContext?.language.is_mixed ?? false
+  const canGenerate = !!capturedText && !isGenerating && (selectedMode !== 'Custom' || !!customPrompt)
+  const isNonLatin = nlpContext && !['Latin', 'Unknown', ''].includes(nlpContext.language.primary_script)
+  const isMixed = nlpContext?.language.is_mixed ?? false
   const isRunningLow = usage.used >= FREE_DAILY_CAP - 2
-  const isAtLimit    = usage.used >= usage.cap
+  const isAtLimit = usage.used >= usage.cap
 
   return (
-    <motion.div className="glass-card" style={{ position: 'relative' }}
-      initial={{ scale: 0.93, opacity: 0, y: 6 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-      transition={{ type: 'spring', stiffness: 320, damping: 26 }}>
-
-      {/* ── History panel overlay ─────────────────────────────── */}
-      <AnimatePresence>
-        {showHistory && (
-          <HistoryPanel onClose={() => setShowHistory(false)} onRestore={handleRestoreHistory} />
-        )}
-      </AnimatePresence>
-
-      {/* ── Header ───────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <Sparkles size={15} color="var(--blue)" />
-          <span style={{ fontWeight: 700, fontSize: '13.5px', letterSpacing: '-0.01em' }}>Prompter</span>
-          <button onClick={async () => { await invoke('delete_api_key').catch(() => {}); setHasKey(false) }}
-            style={{ background: 'none', border: 'none', padding: '0 0 0 2px', cursor: 'pointer', opacity: 0.3 }}
-            title="Settings">
-            <Settings size={12} color="var(--text)" />
-          </button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {(isNonLatin || isMixed) && (
-            <span style={{
-              fontSize: '9px', padding: '2px 7px', borderRadius: '10px',
-              background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
-              color: '#a5b4fc', fontWeight: 600
-            }}>
-              {isMixed ? 'MIXED' : nlpContext?.language.primary_script.toUpperCase()}
-            </span>
-          )}
-          <button onClick={() => setShowHistory(v => !v)} className="mode-pill"
-            style={{ padding: '4px 8px', opacity: showHistory ? 1 : 0.4 }}
-            title="Recent transforms">
-            <History size={12} />
-          </button>
-
-          {/* Priority 3: usage counter — amber at 18+, red at limit */}
-          <span style={{
-            fontSize: '10px', fontWeight: 600,
-            color: isAtLimit ? '#ef4444' : isRunningLow ? '#f59e0b' : 'var(--text-dim)',
-          }}>
-            {usage.used}/{usage.cap}
-          </span>
-
-          <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-            {useLocal ? '⚡ Local' : '🔒 Gemini'}
-          </span>
-          <button onClick={() => setUseLocal(v => !v)} className="toggle-switch">
-            <div className={`switch-knob${useLocal ? ' on' : ''}`} />
-          </button>
-        </div>
+    <div className="app-container">
+      {/* ── Window Controls — visible only on hover of the outer container ── */}
+      <div className="window-controls">
+        <button onClick={() => getCurrentWindow().minimize()} title="Minimize">
+          <Minus size={12} />
+        </button>
+        <button onClick={() => getCurrentWindow().toggleMaximize()} title="Maximize">
+          <Square size={10} />
+        </button>
+        <button onClick={() => getCurrentWindow().hide()} title="Close" className="close">
+          <X size={12} />
+        </button>
       </div>
 
-      {/* Priority 3: upgrade nudge — appears at 18+, red at limit */}
-      <AnimatePresence>
-        {isRunningLow && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden', marginBottom: '8px' }}>
-            <div style={{
-              background: isAtLimit ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
-              border: `1px solid ${isAtLimit ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
-              borderRadius: '8px', padding: '7px 12px', fontSize: '11px',
-              color: isAtLimit ? '#fca5a5' : '#fcd34d',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-              <span>
-                {isAtLimit
-                  ? '⛔ Daily limit reached. Resets tomorrow.'
-                  : `⚡ Running low — ${usage.cap - usage.used} transform${usage.cap - usage.used === 1 ? '' : 's'} left today.`}
-              </span>
-              {!isAtLimit && <span style={{ opacity: 0.6, fontSize: '10px' }}>Go Pro for unlimited</span>}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Captured text + Tone Mirror ──────────────────────── */}
-      <div style={{ marginBottom: '10px' }}>
-        <div className="text-preview">
-          {capturedText
-            ? `"${capturedText.slice(0, 120)}${capturedText.length > 120 ? '…' : ''}"`
-            // Priority 2: developer-focused placeholder
-            : <span style={{ opacity: 0.45 }}>Select rough text → Alt+K → get a structured prompt</span>
+      <motion.div className="glass-card" style={{ position: 'relative' }}
+        initial={{ scale: 0.93, opacity: 0, y: 6 }}
+        animate={{
+          scale: 1, opacity: 1,
+          y: [0, -6, 0] // Floating effect
+        }}
+        transition={{
+          type: 'spring',
+          stiffness: 300,
+          damping: 30,
+          y: {
+            duration: 4,
+            repeat: Infinity,
+            ease: "easeInOut"
           }
+        }}>
+
+        {/* ── History panel overlay ─────────────────────────────── */}
+        <AnimatePresence>
+          {showHistory && (
+            <HistoryPanel onClose={() => setShowHistory(false)} onRestore={handleRestoreHistory} />
+          )}
+        </AnimatePresence>
+
+        {/* ── Header ───────────────────────────────────────────── */}
+        <div className="app-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+            <Sparkles size={15} color="var(--blue)" />
+            <span style={{ fontWeight: 700, fontSize: '13.5px', letterSpacing: '-0.01em' }}>SnapText</span>
+            <button onClick={async () => { await invoke('delete_api_key').catch(() => { }); setHasKey(false) }}
+              style={{ background: 'none', border: 'none', padding: '0 0 0 2px', cursor: 'pointer', opacity: 0.3 }}
+              title="Settings">
+              <Settings size={12} color="var(--text)" />
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {(isNonLatin || isMixed) && (
+              <span style={{
+                fontSize: '9px', padding: '2px 7px', borderRadius: '10px',
+                background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
+                color: '#a5b4fc', fontWeight: 600
+              }}>
+                {isMixed ? 'MIXED' : nlpContext?.language.primary_script.toUpperCase()}
+              </span>
+            )}
+            <button onClick={() => setShowHistory(v => !v)} className="mode-pill"
+              style={{ padding: '4px 8px', opacity: showHistory ? 1 : 0.4 }}
+              title="Recent transforms">
+              <History size={12} />
+            </button>
+
+            {/* Priority 3: usage counter — amber at 18+, red at limit */}
+            <span style={{
+              fontSize: '10px', fontWeight: 600,
+              color: isAtLimit ? '#ef4444' : isRunningLow ? '#f59e0b' : 'var(--text-dim)',
+            }}>
+              {usage.used}/{usage.cap}
+            </span>
+
+            <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
+              {useLocal ? '⚡ Local' : '🔒 Gemini'}
+            </span>
+            <button onClick={() => setUseLocal(v => !v)} className="toggle-switch">
+              <div className={`switch-knob${useLocal ? ' on' : ''}`} />
+            </button>
+          </div>
         </div>
-        {nlpContext && (
-          <ToneMirror
-            score={nlpContext.tone} friction={nlpContext.friction_phrases}
-            wordCount={nlpContext.word_count} isRtl={nlpContext.language.is_rtl} isMixed={isMixed}
-          />
-        )}
-      </div>
 
-      {/* ── Suggestion bar — Priority 2: fixed 3-pill order ─── */}
-      {intentResult ? (
-        <SuggestionBar result={intentResult} selected={selectedMode}
-          onSelect={handleSuggestionClick} isRefined={isRefined} />
-      ) : (
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-          {PRIMARY_MODES.map(m => (
-            <button key={m} className={`mode-pill${selectedMode === m ? ' active' : ''}`}
-              onClick={() => setSelectedMode(m)}>{m}</button>
-          ))}
-          <button className="mode-pill" style={{ padding: '5px 9px', opacity: 0.4, marginLeft: 'auto' }}>···</button>
+        {/* Priority 3: upgrade nudge — appears at 18+, red at limit */}
+        <AnimatePresence>
+          {isRunningLow && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden', marginBottom: '8px' }}>
+              <div style={{
+                background: isAtLimit ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                border: `1px solid ${isAtLimit ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
+                borderRadius: '8px', padding: '7px 12px', fontSize: '11px',
+                color: isAtLimit ? '#fca5a5' : '#fcd34d',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <span>
+                  {isAtLimit
+                    ? '⛔ Daily limit reached. Resets tomorrow.'
+                    : `⚡ Running low — ${usage.cap - usage.used} transform${usage.cap - usage.used === 1 ? '' : 's'} left today.`}
+                </span>
+                {!isAtLimit && <span style={{ opacity: 0.6, fontSize: '10px' }}>Go Pro for unlimited</span>}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Captured text + Tone Mirror ──────────────────────── */}
+        <div style={{ marginBottom: '10px' }}>
+          <div className="text-preview">
+            {capturedText
+              ? `"${capturedText.slice(0, 120)}${capturedText.length > 120 ? '…' : ''}"`
+              // Priority 2: developer-focused placeholder
+              : <span style={{ opacity: 0.45 }}>Select rough text → Alt+K → get a structured prompt</span>
+            }
+          </div>
+          {nlpContext && (
+            <ToneMirror
+              score={nlpContext.tone} friction={nlpContext.friction_phrases}
+              wordCount={nlpContext.word_count} isRtl={nlpContext.language.is_rtl} isMixed={isMixed}
+            />
+          )}
         </div>
-      )}
 
-      {/* ── Custom prompt ────────────────────────────────────── */}
-      <AnimatePresence>
-        {selectedMode === 'Custom' && (
-          <motion.div key="custom" initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            style={{ overflow: 'hidden', marginBottom: '8px' }}>
-            <input type="text" placeholder="E.g. 'Make it a tweet' or 'Translate to French'…"
-              value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} autoFocus />
-          </motion.div>
+        {/* ── Suggestion bar — Priority 2: fixed 3-pill order ─── */}
+        {intentResult ? (
+          <SuggestionBar result={intentResult} selected={selectedMode}
+            onSelect={handleSuggestionClick} isRefined={isRefined} />
+        ) : (
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+            {PRIMARY_MODES.map(m => (
+              <button key={m} className={`mode-pill${selectedMode === m ? ' active' : ''}`}
+                onClick={() => setSelectedMode(m)}>{m}</button>
+            ))}
+            <button className="mode-pill" style={{ padding: '5px 9px', opacity: 0.4, marginLeft: 'auto' }}>···</button>
+          </div>
         )}
-      </AnimatePresence>
 
-      {/* ── Output ──────────────────────────────────────────── */}
-      <div className={`token-container${isGenerating ? ' blinking-cursor' : ''}`} ref={scrollRef}>
-        {streamingResult
-          ? streamingResult
-          : isGenerating ? 'Thinking…'
-            : <span style={{ color: 'var(--text-dim)' }}>
+        {/* ── Custom prompt ────────────────────────────────────── */}
+        <AnimatePresence>
+          {selectedMode === 'Custom' && (
+            <motion.div key="custom" initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+              style={{ overflow: 'hidden', marginBottom: '8px' }}>
+              <input type="text" placeholder="E.g. 'Make it a tweet' or 'Translate to French'…"
+                value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} autoFocus />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Output ──────────────────────────────────────────── */}
+        <div className={`token-container${isGenerating ? ' blinking-cursor' : ''}`} ref={scrollRef}>
+          {streamingResult
+            ? streamingResult
+            : isGenerating ? 'Thinking…'
+              : <span style={{ color: 'var(--text-dim)' }}>
                 {capturedText ? 'Ready — press Transform or Ctrl+↵' : 'Waiting for captured text…'}
               </span>
-        }
-        {error && <div style={{ color: '#ef4444', marginTop: '8px', fontSize: '12px' }}>⚠ {error}</div>}
-      </div>
+          }
+          {error && <div style={{ color: '#ef4444', marginTop: '8px', fontSize: '12px' }}>⚠ {error}</div>}
+        </div>
 
-      {/* ── Actions ─────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: '7px', marginTop: '12px' }}>
-        <button onClick={() => handleGenerate()} disabled={!canGenerate}
-          className="mode-pill primary-action"
-          style={{
-            flexGrow: 1, padding: '9px',
-            background: canGenerate ? 'var(--blue)' : 'rgba(255,255,255,0.05)',
-            color: '#fff', fontWeight: 700, fontSize: '13px',
-            boxShadow: canGenerate ? '0 0 18px var(--blue-glow)' : 'none'
-          }}>
-          {useLocal ? <Zap size={13} /> : <Send size={13} />}
-          {isGenerating ? 'Generating…' : 'Transform'}
-        </button>
-        <button onClick={handleInsert} disabled={!streamingResult || isGenerating}
-          className="mode-pill" title="Insert back (Tab)" style={{ padding: '9px 13px' }}>
-          <CheckCircle2 size={15} />
-        </button>
-        <button onClick={() => streamingResult && navigator.clipboard.writeText(streamingResult)}
-          disabled={!streamingResult} className="mode-pill" title="Copy (C)" style={{ padding: '9px 13px' }}>
-          <Copy size={15} />
-        </button>
-      </div>
+        {/* ── Actions ─────────────────────────────────────────── */}
+        <div style={{ display: 'flex', gap: '7px', marginTop: '12px' }}>
+          <button onClick={() => handleGenerate()} disabled={!canGenerate}
+            className="mode-pill primary-action"
+            style={{
+              flexGrow: 1, padding: '9px',
+              background: canGenerate ? 'var(--blue)' : 'rgba(255,255,255,0.05)',
+              color: '#fff', fontWeight: 700, fontSize: '13px',
+              boxShadow: canGenerate ? '0 0 18px var(--blue-glow)' : 'none'
+            }}>
+            {useLocal ? <Zap size={13} /> : <Send size={13} />}
+            {isGenerating ? 'Generating…' : 'Transform'}
+          </button>
+          <button onClick={handleInsert} disabled={!streamingResult || isGenerating}
+            className="mode-pill" title="Insert back (Tab)" style={{ padding: '9px 13px' }}>
+            <CheckCircle2 size={15} />
+          </button>
+          <button onClick={() => streamingResult && navigator.clipboard.writeText(streamingResult)}
+            disabled={!streamingResult} className="mode-pill" title="Copy (C)" style={{ padding: '9px 13px' }}>
+            <Copy size={15} />
+          </button>
+        </div>
 
-      {/* ── Shortcut hints ───────────────────────────────────── */}
-      <div className="shortcut-hints">
-        <span>Alt+K Open</span>
-        <span>Alt+⇧+K Prompt</span>
-        <span>Alt+⇧+L Fix</span>
-        <span>Tab Insert</span>
-      </div>
-    </motion.div>
+        {/* ── Shortcut hints ───────────────────────────────────── */}
+        <div className="shortcut-hints">
+          <span>Alt+K Open</span>
+          <span>Alt+⇧+K Prompt</span>
+          <span>Alt+⇧+L Fix</span>
+          <span>Tab Insert</span>
+        </div>
+      </motion.div>
+    </div>
   )
 }
 
