@@ -8,7 +8,6 @@ import './index.css'
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const FREE_DAILY_CAP = 20
-const PROXY_URL = 'https://prompter-proxy.onrender.com'
 const PRIMARY_MODES: Mode[] = ['Prompt', 'Correct', 'Translate']
 const HIDDEN_MODES: Mode[] = ['Email', 'Summarize', 'Professional', 'Casual', 'Strategist', 'Knowledge', 'Custom']
 
@@ -259,13 +258,13 @@ function App() {
 
   const isGenerating = phase === 'thinking' || phase === 'streaming'
 
-  // ── Usage ────────────────────────────────────────────────────────────────
+  // ── Usage — reads from Cloudflare Worker KV ─────────────────────────────
   const refreshUsage = useCallback(async () => {
     try {
-      const id = await invoke<string>('get_device_id')
-      const res = await fetch(`${PROXY_URL}/usage?device=${id}`)
-      if (res.ok) { const d = await res.json(); setUsage({ used: d.used ?? 0, cap: d.cap ?? FREE_DAILY_CAP }) }
-    } catch { /* proxy offline — keep defaults */ }
+      // get_worker_usage is a Tauri command that calls the Worker's /usage endpoint
+      const result = await invoke<{ used: number; cap: number } | null>('get_worker_usage').catch(() => null)
+      if (result) setUsage({ used: result.used, cap: result.cap })
+    } catch { /* Worker offline — keep defaults */ }
   }, [])
 
   // ── Boot ─────────────────────────────────────────────────────────────────

@@ -191,6 +191,13 @@ fn get_device_id() -> String {
     ai::device_id()
 }
 
+#[tauri::command]
+async fn get_worker_usage() -> Option<serde_json::Value> {
+    ai::get_worker_usage().await.map(|(used, cap)| {
+        serde_json::json!({ "used": used, "cap": cap })
+    })
+}
+
 // ── Loader toast helpers ───────────────────────────────────────────────────
 // A tiny always-on-top window that shows while silent hotkeys are working.
 
@@ -469,6 +476,7 @@ pub fn run() {
             get_history,
             get_config_value,
             set_config_value,
+            get_worker_usage,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

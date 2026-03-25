@@ -3,21 +3,29 @@ use reqwest::Client;
 use futures_util::StreamExt;
 use tauri::{AppHandle, Emitter};
 
+// ── Architecture: Cloudflare Worker proxy ──────────────────────────────────
+//
+// Zero secrets in binary. The Worker holds API keys as Cloudflare secrets.
+// Client sends only X-Device-ID. Worker rotates keys, enforces daily cap,
+// falls back across models, and streams SSE back to the client.
+//
+// Deploy the worker once from d:\ai_keyboard\worker\ using:
+//   npx wrangler deploy
+//
+// Then update WORKER_URL below with your actual worker URL.
+
+const WORKER_URL: &str = "https://snaptext-worker.YOUR-SUBDOMAIN.workers.dev";
+
 // ── Request / Response types ───────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
-#[allow(non_snake_case)]
-struct GeminiRequest {
-    contents: Vec<Content>,
-    generationConfig: GenerationConfig,
+struct WorkerRequest {
+    system_prompt: String,
+    user_text:     String,
+    stream:        bool,
+    max_tokens:    i32,
+    temperature:   f32,
 }
-#[derive(serde::Serialize)]
-struct Content { parts: Vec<Part> }
-#[derive(serde::Serialize)]
-struct Part    { text: String }
-#[derive(serde::Serialize)]
-#[allow(non_snake_case)]
-struct GenerationConfig { temperature: f32, maxOutputTokens: i32 }
 
 #[derive(Deserialize)]
 struct GeminiStreamResponse { candidates: Option<Vec<Candidate>> }
@@ -27,6 +35,15 @@ struct Candidate            { content: Option<CandidateContent> }
 struct CandidateContent     { parts: Option<Vec<ResponsePart>> }
 #[derive(Deserialize)]
 struct ResponsePart         { text: Option<String> }
+
+#[derive(Deserialize)]
+struct ClassifierResponse {
+    intent:       Option<String>,
+    confidence:   Option<f32>,
+    alternatives: Option<Vec<ClassifierAlt>>,
+}
+#[derive(Deserialize)]
+struct ClassifierAlt { intent: Option<String>, confidence: Option<f32> }
 
 fn extract_tokens(resp: &GeminiStreamResponse) -> Vec<String> {
     let mut tokens = Vec::new();
@@ -46,57 +63,6 @@ fn extract_tokens(resp: &GeminiStreamResponse) -> Vec<String> {
     tokens
 }
 
-// ── Architecture: Direct Gemini, key rotation in Rust ─────────────────────
-//
-// Why NOT a proxy on Render:
-//   - Render free tier sleeps after 15 min inactivity
-//   - Cold start = 10–30 second first-request delay
-//   - Completely unacceptable UX for a hotkey tool
-//
-// Why direct Gemini:
-//   - ~400ms TTFB instead of 10–30s cold start
-//   - Zero infrastructure to maintain
-//   - Keys rotate client-side in compiled Rust — not visible in JS bundle
-//   - Gemini free tier is generous enough for launch (1500 req/day per key)
-//
-// Key pool: XOR-obfuscated at compile time. Rotate round-robin.
-// Add real keys below before shipping. Each key = ~1500 free calls/day.
-// With 3 keys = 4500 calls/day free — more than enough for launch.
-
-const MODEL_PRIMARY: &str = "gemini-2.0-flash";
-const MODEL_SECONDARY: &str = "gemini-1.5-flash";
-
-// XOR key for compile-time obfuscation (not real security, just not plaintext)
-const XOR_BYTE: u8 = 0x5A;
-
-// Store keys XOR-obfuscated. Generate with: echo -n "AIzaSy..." | xxd
-// Placeholder keys below — replace with real ones before build.
-// Each entry is the XOR(0x5A) of each byte of the API key string.
-const OBFUSCATED_KEYS: &[&[u8]] = &[
-    &[27, 19, 32, 59, 9, 35, 27, 29, 53, 60, 57, 49, 52, 56, 63, 14, 119, 34, 107, 57, 48, 109, 10, 3, 21, 59, 48, 119, 44, 45, 54, 32, 20, 49, 15, 51, 59, 24, 45],
-    &[27, 19, 32, 59, 9, 35, 27, 43, 16, 55, 45, 10, 63, 24, 98, 62, 0, 14, 18, 15, 46, 42, 47, 13, 30, 12, 29, 24, 41, 55, 107, 51, 50, 15, 48, 35, 18, 110, 98],
-    &[27, 19, 32, 59, 9, 35, 30, 55, 12, 25, 16, 20, 28, 107, 9, 24, 107, 49, 10, 2, 62, 35, 46, 111, 105, 14, 60, 104, 32, 12, 47, 119, 99, 44, 35, 63, 18, 51, 53],
-];
-
-static KEY_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-fn deobfuscate(obfuscated: &[u8]) -> String {
-    obfuscated.iter().map(|&b| (b ^ XOR_BYTE) as char).collect()
-}
-
-fn get_next_key() -> Option<String> {
-    let valid_keys: Vec<String> = OBFUSCATED_KEYS
-        .iter()
-        .map(|k| deobfuscate(k))
-        .filter(|k| !k.is_empty() && k.starts_with("AIza"))
-        .collect();
-
-    if valid_keys.is_empty() { return None; }
-
-    let idx = KEY_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % valid_keys.len();
-    Some(valid_keys[idx].clone())
-}
-
 // ── Device ID — FNV-1a, stable across Rust versions ───────────────────────
 
 pub fn device_id() -> String {
@@ -111,96 +77,70 @@ pub fn device_id() -> String {
     format!("{:x}", hash)
 }
 
-// ── URL builder ────────────────────────────────────────────────────────────
-
-fn gemini_url(model: &str, stream: bool) -> String {
-    let endpoint = if stream { "streamGenerateContent" } else { "generateContent" };
-    format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:{}",
-        model, endpoint
-    )
-}
-
-// ── Shared request builder ─────────────────────────────────────────────────
-
-fn build_gemini_request(system_prompt: &str, user_text: &str, max_tokens: i32) -> GeminiRequest {
-    let full_prompt = format!("{}\n\nInput: {}", system_prompt, user_text);
-    GeminiRequest {
-        contents: vec![Content { parts: vec![Part { text: full_prompt }] }],
-        generationConfig: GenerationConfig { temperature: 0.7, maxOutputTokens: max_tokens },
-    }
-}
-
 fn make_client() -> Client {
     Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(60))
         .build()
         .unwrap_or_default()
 }
 
+// ── Worker request helper ──────────────────────────────────────────────────
+
+fn worker_url(path: &str) -> String {
+    format!("{}{}", WORKER_URL.trim_end_matches('/'), path)
+}
+
+fn add_device_header(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    req.header("X-Device-ID", device_id())
+}
+
 // ── Streaming generation — used by overlay (Alt+K) ────────────────────────
-// Uses the user-supplied key first, falls back to bundled key pool.
 
 pub async fn generate_stream(
     app: AppHandle,
-    user_api_key: &str,
+    _user_api_key: &str,   // kept for API compatibility — keys live in Worker
     system_prompt: &str,
     user_text: &str,
 ) -> Result<String, String> {
-    println!("[TRACE] generate_stream called with text len: {}", user_text.len());
     let client = make_client();
-    let request = build_gemini_request(system_prompt, user_text, 4096);
-    let mut last_error = "No keys available".to_string();
-    
-    // Model fallback: try 2.0 first, then 1.5
-    let models = [MODEL_PRIMARY, MODEL_SECONDARY];
-    
-    // Retry loop: if 429, try next key in pool
-    let max_attempts = if !user_api_key.is_empty() { 1 } else { OBFUSCATED_KEYS.len() };
-    
-    for model in models {
-        for _ in 0..max_attempts {
-            // Key resolution
-            let api_key = if !user_api_key.is_empty() {
-                user_api_key.to_string()
-            } else if let Some(k) = get_next_key() {
-                k
-            } else { break; };
+    let body   = WorkerRequest {
+        system_prompt: system_prompt.to_string(),
+        user_text:     user_text.to_string(),
+        stream:        true,
+        max_tokens:    4096,
+        temperature:   0.7,
+    };
 
-            let url = format!("{}?key={}&alt=sse", gemini_url(model, true), api_key);
-            let response = match client.post(&url).json(&request).send().await {
-                Ok(r) => r,
-                Err(e) => { last_error = format!("Request failed: {}", e); continue; }
-            };
+    let response = add_device_header(
+        client.post(worker_url("/generate")).json(&body)
+    )
+    .send()
+    .await
+    .map_err(|e| format!("Network error: {}", e))?;
 
-            if !response.status().is_success() {
-                let status = response.status();
-                last_error = response.text().await.unwrap_or_default();
-                
-                if status == reqwest::StatusCode::TOO_MANY_REQUESTS && user_api_key.is_empty() {
-                    // Rate limit hit on bundled key — try next one or next model
-                    continue;
-                }
+    if !response.status().is_success() {
+        let status = response.status();
+        let text   = response.text().await.unwrap_or_default();
 
-                let error_msg = if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-                    "Invalid API key. Check settings.".to_string()
-                } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                    "Rate limit hit. Please wait a moment or add your own key.".to_string()
+        let msg = if status.as_u16() == 429 {
+            // Try to parse Worker's JSON error
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(e) = v["error"].as_str() {
+                    e.to_string()
                 } else {
-                    format!("AI error {}.", status)
-                };
-                app.emit("ai_error", &error_msg).ok();
-                return Err(format!("AI error {}: {}", status, last_error));
+                    "Daily limit reached. Resets at midnight.".into()
+                }
+            } else {
+                "Rate limit hit.".into()
             }
-
-            // Successful response (stream)
-            return handle_stream_response(app, response).await;
-        }
+        } else {
+            format!("Worker error {}: {}", status, text)
+        };
+        app.emit("ai_error", &msg).ok();
+        return Err(msg);
     }
 
-    let msg = "All API keys are rate-limited across both Gemini 2.0 and 1.5. Wait a moment.".to_string();
-    app.emit("ai_error", &msg).ok();
-    Err(last_error)
+    handle_stream_response(app, response).await
 }
 
 // ── Stream handler helper ──────────────────────────────────────────────────
@@ -215,26 +155,27 @@ async fn handle_stream_response(app: AppHandle, response: reqwest::Response) -> 
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         let lines: Vec<&str> = buffer.lines().collect();
-        let mut consumed_lines = 0;
+        let mut consumed = 0;
 
         for line in &lines {
             if line.starts_with("data: ") {
                 let json_str = &line[6..];
-                if json_str == "[DONE]" { consumed_lines += 1; continue; }
+                if json_str == "[DONE]" { consumed += 1; continue; }
                 if let Ok(resp) = serde_json::from_str::<GeminiStreamResponse>(json_str) {
                     for token in extract_tokens(&resp) {
                         full_output.push_str(&token);
                         app.emit("ai_token", &token).ok();
                     }
                 }
-                consumed_lines += 1;
+                consumed += 1;
             } else if line.is_empty() {
-                consumed_lines += 1;
+                consumed += 1;
             } else { break; }
         }
-        if consumed_lines > 0 { buffer = lines[consumed_lines..].join("\n"); }
+        if consumed > 0 { buffer = lines[consumed..].join("\n"); }
     }
 
+    // Fallback: whole-body JSON (non-SSE mode)
     if full_output.is_empty() && !buffer.trim().is_empty() {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(buffer.trim()) {
             if let Some(t) = val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
@@ -249,102 +190,79 @@ async fn handle_stream_response(app: AppHandle, response: reqwest::Response) -> 
 }
 
 // ── Silent generation — used by sub-hotkeys (Alt+Shift+K / Alt+Shift+L) ───
-// Non-streaming. No window. Returns full text.
 
 pub async fn generate_silent(
-    user_api_key: &str,
+    _user_api_key: &str,   // kept for API compatibility
     system_prompt: &str,
     user_text: &str,
 ) -> Result<String, String> {
     let client = make_client();
-    let request = build_gemini_request(system_prompt, user_text, 4096);
-    let mut last_error = "No keys available".to_string();
+    let body   = WorkerRequest {
+        system_prompt: system_prompt.to_string(),
+        user_text:     user_text.to_string(),
+        stream:        false,
+        max_tokens:    4096,
+        temperature:   0.7,
+    };
 
-    let models = [MODEL_PRIMARY, MODEL_SECONDARY];
-    let max_attempts = if !user_api_key.is_empty() { 1 } else { OBFUSCATED_KEYS.len() };
+    let response = add_device_header(
+        client.post(worker_url("/generate")).json(&body)
+    )
+    .send()
+    .await
+    .map_err(|e| format!("Network error: {}", e))?;
 
-    for model in models {
-        for _ in 0..max_attempts {
-            let api_key = if !user_api_key.is_empty() {
-                user_api_key.to_string()
-            } else if let Some(k) = get_next_key() {
-                k
-            } else { break; };
-
-            let url = format!("{}?key={}", gemini_url(model, false), api_key);
-            let response = match client.post(&url).json(&request).send().await {
-                Ok(r) => r,
-                Err(e) => { last_error = format!("Request failed: {}", e); continue; }
-            };
-
-            if !response.status().is_success() {
-                let status = response.status();
-                last_error = response.text().await.unwrap_or_default();
-                if status == reqwest::StatusCode::TOO_MANY_REQUESTS && user_api_key.is_empty() {
-                    continue;
-                }
-                return Err(format!("AI error {}: {}", status, last_error));
-            }
-            
-            let body: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-            let text = body["candidates"][0]["content"]["parts"][0]["text"]
-                .as_str().unwrap_or_default().to_string();
-            
-            if text.is_empty() { return Err("Empty response".into()); }
-            return Ok(text);
-        }
+    if !response.status().is_success() {
+        let status = response.status();
+        let text   = response.text().await.unwrap_or_default();
+        return Err(format!("Worker error {}: {}", status, text));
     }
-    Err(format!("All keys/models rate-limited across both models: {}", last_error))
+
+    let data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    let text = data["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    if text.is_empty() { return Err("Empty response from Worker.".into()); }
+    Ok(text)
 }
 
 // ── Intent classifier ─────────────────────────────────────────────────────
+// Routes through the Worker so keys are never in the client binary.
 
-#[derive(Deserialize)]
-struct ClassifierResponse { intent: Option<String>, confidence: Option<f32>, alternatives: Option<Vec<ClassifierAlt>> }
-#[derive(Deserialize)]
-struct ClassifierAlt { intent: Option<String>, confidence: Option<f32> }
+pub async fn classify_intent(
+    _api_key: &str,   // kept for API compatibility
+    text: &str,
+) -> Option<(String, f32, Vec<(String, f32)>)> {
+    let client  = make_client();
+    let snippet: String = text.chars().take(500).collect();
+    let prompt  = format!(
+        "Classify text into ONE of: Email, Chat, Prompt, Report, Social, General.\n\
+         Return ONLY JSON: {{\"intent\":\"Email\",\"confidence\":0.92,\"alternatives\":[{{\"intent\":\"Chat\",\"confidence\":0.05}}]}}\n\n\
+         Text: \"{}\"",
+        snippet
+    );
+    let body = WorkerRequest {
+        system_prompt: String::new(),
+        user_text:     prompt,
+        stream:        false,
+        max_tokens:    150,
+        temperature:   0.0,
+    };
 
-    let models = [MODEL_PRIMARY, MODEL_SECONDARY];
-    let max_attempts = if !api_key.is_empty() && api_key != "proxy" { 1 } else { OBFUSCATED_KEYS.len() };
+    let response = add_device_header(
+        client.post(worker_url("/generate")).json(&body)
+    )
+    .send()
+    .await
+    .ok()?;
 
-    for model in models {
-        for _ in 0..max_attempts {
-            let key = if !api_key.is_empty() && api_key != "proxy" {
-                api_key.to_string()
-            } else {
-                get_next_key()?
-            };
-            println!("[TRACE] classify_intent triggered on model {} with text: \"{}\"", model, text.chars().take(20).collect::<String>());
+    if !response.status().is_success() { return None; }
 
-            let url = format!("{}?key={}", gemini_url(model, false), key);
-            let snippet: String = text.chars().take(500).collect();
-            let prompt = format!(
-                "Classify text into ONE of: Email, Chat, Prompt, Report, Social, General.\n\
-                 Return ONLY JSON: {{\"intent\":\"Email\",\"confidence\":0.92,\"alternatives\":[{{\"intent\":\"Chat\",\"confidence\":0.05}}]}}\n\n\
-                 Text: \"{}\"",
-                snippet
-            );
-            let request = GeminiRequest {
-                contents: vec![Content { parts: vec![Part { text: prompt }] }],
-                generationConfig: GenerationConfig { temperature: 0.0, maxOutputTokens: 150 },
-            };
-
-            let response = match client.post(&url).json(&request).send().await {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-
-            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && (api_key.is_empty() || api_key == "proxy") {
-                continue;
-            }
-
-            if !response.status().is_success() { return None; }
-
-            let body = response.text().await.ok()?;
-            return parse_classifier_response(&body);
-        }
-    }
-    None
+    let data: serde_json::Value = response.json().await.ok()?;
+    let raw = data["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or("");
+    parse_classifier_response(raw)
 }
 
 fn parse_classifier_response(body: &str) -> Option<(String, f32, Vec<(String, f32)>)> {
@@ -370,12 +288,26 @@ fn parse_classifier_response(body: &str) -> Option<(String, f32, Vec<(String, f3
     Some((intent, confidence, alts))
 }
 
+// ── Usage counter — reads from Worker KV ──────────────────────────────────
+
+pub async fn get_worker_usage() -> Option<(u32, u32)> {
+    let client   = make_client();
+    let response = add_device_header(
+        client.get(format!("{}/usage", WORKER_URL.trim_end_matches('/')))
+    )
+    .send()
+    .await
+    .ok()?;
+
+    if !response.status().is_success() { return None; }
+    let data: serde_json::Value = response.json().await.ok()?;
+    let used = data["used"].as_u64()? as u32;
+    let cap  = data["cap"].as_u64().unwrap_or(20) as u32;
+    Some((used, cap))
+}
+
 // ── Model listing ──────────────────────────────────────────────────────────
 
-pub async fn list_models(api_key: &str) -> Result<String, String> {
-    let key = if !api_key.is_empty() { api_key.to_string() } else { get_next_key().unwrap_or_default() };
-    let client = make_client();
-    let url    = format!("https://generativelanguage.googleapis.com/v1beta/models?key={}", key);
-    let res    = client.get(url).send().await.map_err(|e| e.to_string())?;
-    res.text().await.map_err(|e| e.to_string())
+pub async fn list_models(_api_key: &str) -> Result<String, String> {
+    Ok("gemini-2.0-flash, gemini-1.5-flash".to_string())
 }
