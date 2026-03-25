@@ -1,11 +1,10 @@
-/* ── Fonts — bundled locally, no CDN dependency ─────────────────────────── */
+/* ── Fonts ───────────────────────────────────────────────────────────────── */
 @font-face {
   font-family: 'Inter';
   src: url('./assets/fonts/Inter-VariableFont_slnt,wght.ttf') format('truetype');
   font-weight: 100 900;
   font-display: swap;
 }
-
 @font-face {
   font-family: 'IBM Plex Mono';
   src: url('./assets/fonts/IBMPlexMono-Regular.ttf') format('truetype');
@@ -13,144 +12,95 @@
   font-display: swap;
 }
 
-/* ── Design tokens ──────────────────────────────────────────────────────── */
+/* ── Design tokens ───────────────────────────────────────────────────────── */
 :root {
-  --blue: #3b82f6;
-  --blue-glow: rgba(59, 130, 246, 0.35);
-  --surface: #0e0e10;
-  --surface2: #161618;
-  --border: rgba(255, 255, 255, 0.07);
-  --text: rgba(255, 255, 255, 0.92);
-  --text-muted: rgba(255, 255, 255, 0.45);
-  --text-dim: rgba(255, 255, 255, 0.22);
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  --blue:        #3b82f6;
+  --blue-bright: #60a5fa;
+  --blue-glow:   rgba(59, 130, 246, 0.40);
+  --indigo-glow: rgba(99, 102, 241, 0.20);
+  --surface:     #0a0a0c;
+  --surface2:    #111113;
+  --surface3:    #1a1a1d;
+  --border:      rgba(255, 255, 255, 0.08);
+  --border-blue: rgba(59, 130, 246, 0.22);
+  --text:        rgba(255, 255, 255, 0.93);
+  --text-muted:  rgba(255, 255, 255, 0.48);
+  --text-dim:    rgba(255, 255, 255, 0.22);
+  --font:        'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono:   'IBM Plex Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
 
   font-family: var(--font);
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
   color: var(--text);
-  background: var(--surface);
+  background: transparent;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Reset ──────────────────────────────────────────────────────────────── */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* ── Reset ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html,
-body {
-  width: 100%;
-  height: 100%;
+html, body {
+  width: 100%; height: 100%;
   background: var(--surface) !important;
   overflow: hidden;
   user-select: none;
 }
-
 body {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100dvh;
 }
-
 #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
+  width: 100%; height: 100%;
 }
 
-/* ── Glass card — opaque with blue ambient glow ─────────────────────────── */
+/* ── Glass card ──────────────────────────────────────────────────────────── */
+/* Strong blue ambient glow, crisper border, richer depth */
 .glass-card {
-  width: 440px;
-  background: rgba(22, 22, 24, 0.85);
-  /* Slightly more transparent */
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-bottom: 1px solid rgba(59, 130, 246, 0.3);
-  /* Accent bottom border */
-  border-radius: 20px;
+  width: 450px;
+  background: var(--surface2);
+  border: 1px solid var(--border-blue);
+  border-radius: 18px;
   padding: 18px 20px 14px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 24px 80px rgba(0, 0, 0, 0.9),
-    0 0 0 0.5px rgba(0, 0, 0, 0.6),
-    0 0 30px rgba(59, 130, 246, 0.15),
-    /* Magical blue glow */
-    0 0 60px rgba(99, 102, 241, 0.1);
-  /* Magical indigo glow */
+    /* inner top highlight */
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    /* deep drop shadow */
+    0 32px 80px rgba(0, 0, 0, 0.85),
+    /* tight edge */
+    0 0 0 0.5px rgba(0, 0, 0, 0.7),
+    /* blue ambient glow — close */
+    0 0 30px rgba(59, 130, 246, 0.14),
+    /* indigo ambient glow — wide */
+    0 0 80px rgba(99, 102, 241, 0.08);
   display: flex;
   flex-direction: column;
+  /* Crisp entry — no spring lag */
+  animation: cardIn 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* ── Loader toast (silent hotkey feedback) ───────────────────────────────── */
-.loader-toast {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(14, 14, 16, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 12px;
-  padding: 10px 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 0 0.5px rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
+@keyframes cardIn {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
 }
 
-.loader-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--blue);
-  border-radius: 50%;
-  flex-shrink: 0;
-  animation: dotPulse 1s ease-in-out infinite;
-}
-
-.loader-toast.done .loader-dot {
-  background: #10b981;
-  animation: none;
-}
-
-.loader-toast.error .loader-dot {
-  background: #ef4444;
-  animation: none;
-}
-
-@keyframes dotPulse {
-
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.3;
-    transform: scale(0.65);
-  }
-}
-
-/* ── Mode pills ─────────────────────────────────────────────────────────── */
+/* ── Mode pills ──────────────────────────────────────────────────────────── */
 .mode-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 5px 11px;
-  border-radius: 7px;
+  padding: 5px 12px;
+  border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
   font-family: var(--font);
@@ -160,36 +110,30 @@ body {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.07);
   color: var(--text-muted);
-  transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s;
+  /* GPU-only properties — no layout reflow */
+  transition: opacity 0.1s, box-shadow 0.1s;
+  will-change: opacity;
 }
-
 .mode-pill:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.09);
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.13);
 }
-
 .mode-pill.active {
   background: var(--blue);
-  border-color: var(--blue);
+  border-color: transparent;
   color: #fff;
-  box-shadow: 0 0 12px var(--blue-glow);
+  box-shadow: 0 0 14px var(--blue-glow), 0 0 4px rgba(59,130,246,0.6);
 }
-
-.mode-pill:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
+.mode-pill:disabled { opacity: 0.28; cursor: not-allowed; }
 
 .primary-action {
-  transition: transform 0.1s, box-shadow 0.12s, background 0.12s !important;
+  transition: transform 0.08s, box-shadow 0.1s, background 0.1s !important;
+  will-change: transform;
 }
+.primary-action:active:not(:disabled) { transform: scale(0.97); }
 
-.primary-action:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-/* ── Text preview ───────────────────────────────────────────────────────── */
+/* ── Text preview ────────────────────────────────────────────────────────── */
 .text-preview {
   font-size: 11.5px;
   color: var(--text-muted);
@@ -197,207 +141,178 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 7px 11px;
+  padding: 7px 12px;
   background: rgba(255, 255, 255, 0.03);
-  border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
   line-height: 1.4;
 }
 
-/* ── Token container ────────────────────────────────────────────────────── */
+/* ── Token / output container ────────────────────────────────────────────── */
 .token-container {
   font-family: var(--font-mono);
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 9px;
-  padding: 11px 13px;
+  background: rgba(0, 0, 0, 0.40);
+  border-radius: 10px;
+  padding: 12px 14px;
   font-size: 12.5px;
-  line-height: 1.65;
-  color: #d4d8e2;
+  line-height: 1.7;
+  color: #cdd6f4;
   overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   white-space: pre-wrap;
-  min-height: 80px;
-  max-height: 320px;
+  min-height: 88px;
+  max-height: 168px;
   flex-shrink: 0;
+  /* Smooth scroll */
+  scroll-behavior: smooth;
 }
-
-.token-container::-webkit-scrollbar {
-  width: 4px;
-}
-
+.token-container::-webkit-scrollbar { width: 3px; }
 .token-container::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
 }
 
-/* ── Blinking cursor ────────────────────────────────────────────────────── */
+/* ── Phase-based generating states ──────────────────────────────────────── */
+/* Phase 1: thinking label fades in */
+.phase-thinking {
+  color: var(--text-dim);
+  animation: phaseIn 0.15s ease both;
+}
+/* Phase 2: first token — text appears progressively */
+.phase-streaming {
+  color: #cdd6f4;
+}
+/* Blinking cursor — only during generation */
 .blinking-cursor::after {
   content: '▋';
   display: inline-block;
-  margin-left: 2px;
-  color: var(--blue);
-  animation: blink 0.9s step-end infinite;
+  margin-left: 1px;
+  color: var(--blue-bright);
+  animation: blink 0.75s step-end infinite;
 }
+@keyframes blink    { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes phaseIn  { from { opacity: 0; } to { opacity: 1; } }
 
-@keyframes blink {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0;
-  }
-}
-
-/* ── Tone mirror pulse animation ────────────────────────────────────────── */
+/* ── Tone mirror pulse ───────────────────────────────────────────────────── */
 @keyframes tonePulse {
-
-  0%,
-  100% {
-    box-shadow: 0 0 0 3px transparent;
-  }
-
-  50% {
-    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.25);
-  }
+  0%, 100% { box-shadow: 0 0 0 2px transparent; }
+  50%       { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.28); }
 }
 
-/* ── Input fields ───────────────────────────────────────────────────────── */
-input[type="text"],
-input:not([type]) {
+/* ── Input fields ────────────────────────────────────────────────────────── */
+input[type="text"], input:not([type]) {
   width: 100%;
   padding: 9px 12px;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 9px;
   color: var(--text);
   font-size: 13px;
   font-family: var(--font);
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-
-input[type="text"]:focus,
-input:not([type]):focus {
+input[type="text"]:focus, input:not([type]):focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
 }
+input::placeholder { color: var(--text-dim); }
 
-input::placeholder {
-  color: var(--text-dim);
-}
-
-/* ── Toggle switch ──────────────────────────────────────────────────────── */
+/* ── Toggle switch ───────────────────────────────────────────────────────── */
 .toggle-switch {
   position: relative;
-  width: 28px;
-  height: 16px;
+  width: 28px; height: 16px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 100px;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition: background 0.15s, border-color 0.15s;
   flex-shrink: 0;
 }
-
-.toggle-switch:has(.on) {
-  background: var(--blue);
-  border-color: var(--blue);
-}
-
+.toggle-switch:has(.on) { background: var(--blue); border-color: var(--blue); }
 .switch-knob {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 10px;
-  height: 10px;
+  top: 2px; left: 2px;
+  width: 10px; height: 10px;
   background: var(--text-muted);
   border-radius: 50%;
-  transition: left 0.18s cubic-bezier(0.4, 0, 0.2, 1), background 0.18s;
+  transition: left 0.15s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s;
+  will-change: left;
 }
+.switch-knob.on { left: 14px; background: #fff; }
 
-.switch-knob.on {
-  left: 14px;
-  background: #fff;
-}
-
-/* ── Shortcut hints ─────────────────────────────────────────────────────── */
+/* ── Shortcut hints ──────────────────────────────────────────────────────── */
 .shortcut-hints {
   display: flex;
   justify-content: center;
   gap: 16px;
-  font-size: 9.5px;
+  font-size: 9px;
   color: var(--text-dim);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   font-weight: 500;
   text-transform: uppercase;
   margin-top: 10px;
+  opacity: 0.7;
 }
 
-/* ── Main Container ─────────────────────────────────────────────────────── */
-.app-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-/* ── Window Controls ────────────────────────────────────────────────────── */
-.window-controls {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  z-index: 1000;
-}
-
-.app-container:hover .window-controls {
-  opacity: 1;
-}
-
-.window-controls button {
-  background: none;
-  border: none;
+/* ── Cancel button (shown during generation) ─────────────────────────────── */
+.cancel-btn {
+  font-size: 11px;
   color: var(--text-dim);
+  background: none;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 6px;
+  padding: 4px 10px;
   cursor: pointer;
-  padding: 4px;
+  transition: color 0.1s, border-color 0.1s;
+}
+.cancel-btn:hover { color: #ef4444; border-color: rgba(239,68,68,0.35); }
+
+/* ── Upgrade nudge banner ────────────────────────────────────────────────── */
+.nudge-banner {
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 11px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition: background 0.1s, color 0.1s;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  animation: phaseIn 0.2s ease both;
 }
 
-.window-controls button:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
+/* ── Animate-pulse (loading spinner) ─────────────────────────────────────── */
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* ── Loader toast (silent hotkey feedback) ───────────────────────────────── */
+.loader-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(14, 14, 16, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+  padding: 10px 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.75), 0 0 20px rgba(59,130,246,0.12);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: border-color 0.2s;
 }
-
-.window-controls button.close:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
+.loader-toast.done  { border-color: rgba(16, 185, 129, 0.35); }
+.loader-toast.error { border-color: rgba(239, 68,  68,  0.35); }
+.loader-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #3b82f6;
+  animation: dotPulse 1s ease-in-out infinite;
+  transition: background 0.2s;
 }
-
-/* ── Pulse (loading) ────────────────────────────────────────────────────── */
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@keyframes pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.4;
-  }
+.loader-toast.done  .loader-dot { background: #10b981; animation: none; }
+.loader-toast.error .loader-dot { background: #ef4444; animation: none; }
+@keyframes dotPulse {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%       { opacity: 0.3; transform: scale(0.6); }
 }
