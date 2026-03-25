@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Prompter",
+  "productName": "SnapText",
   "version": "0.1.0",
-  "identifier": "com.ai.prompter",
+  "identifier": "com.snaptext.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Prompter",
+        "title": "SnapText",
         "width": 480,
         "height": 580,
         "resizable": false,
@@ -25,10 +25,26 @@
         "center": true,
         "visible": false,
         "focus": false
+      },
+      {
+        "label": "loader",
+        "title": "",
+        "width": 220,
+        "height": 48,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": false,
+        "visible": false,
+        "focus": false,
+        "url": "loader.html"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
+      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com https://prompter-proxy.onrender.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
     }
   },
   "bundle": {

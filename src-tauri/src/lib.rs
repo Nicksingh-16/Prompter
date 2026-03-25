@@ -124,8 +124,7 @@ fn delete_api_key(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn has_api_key(_state: State<'_, AppState>) -> bool {
-    // Proxy mode: no user key needed, always return true to skip onboarding
-    true
+    true // Proxy mode: no user key ever needed
 }
 
 #[tauri::command]
@@ -192,18 +191,56 @@ fn get_device_id() -> String {
     ai::device_id()
 }
 
+// ── Loader toast helpers ───────────────────────────────────────────────────
+// A tiny always-on-top window that shows while silent hotkeys are working.
+
+fn loader_show(handle: &AppHandle, mode: &str) {
+    if let Some(w) = handle.get_webview_window("loader") {
+        // Position bottom-center of screen
+        if let Ok(Some(monitor)) = w.primary_monitor() {
+            let size  = monitor.size();
+            let scale = monitor.scale_factor();
+            let x = (size.width  as f64 / scale - 220.0) / 2.0;
+            let y =  size.height as f64 / scale - 48.0 - 40.0;
+            let _ = w.set_position(tauri::LogicalPosition::new(x, y));
+        }
+        let label = match mode {
+            "Prompt"  => "Structuring prompt…",
+            "Correct" => "Rewriting to English…",
+            _         => "Working…",
+        };
+        handle.emit("loader_state", serde_json::json!({
+            "state": "working",
+            "label": label,
+        })).ok();
+        let _ = w.show();
+        let _ = w.set_always_on_top(true);
+    }
+}
+
+fn loader_hide(handle: &AppHandle, success: bool) {
+    if let Some(w) = handle.get_webview_window("loader") {
+        handle.emit("loader_state", serde_json::json!({
+            "state": if success { "done" } else { "error" },
+            "label": if success { "Done" } else { "Failed" },
+        })).ok();
+        // Brief pause so user sees the result state before it disappears
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        let _ = w.hide();
+    }
+}
+
 // ── Show overlay (Alt+K) ───────────────────────────────────────────────────
-// Captures selected text, shows the overlay window, lets user choose mode.
 
 fn show_overlay(handle: &AppHandle) {
+    println!("[TRACE] show_overlay called");
     let captured = capture::capture_text().unwrap_or_default();
     let ctx      = nlp::analyze(&captured);
 
-    let payload = serde_json::json!({
+    handle.emit("text_captured", serde_json::json!({
         "text":    captured,
         "context": ctx,
-    });
-    handle.emit("text_captured", payload).ok();
+    })).ok();
 
     if let Some(window) = handle.get_webview_window("main") {
         let _ = window.center();
@@ -212,8 +249,9 @@ fn show_overlay(handle: &AppHandle) {
         let _ = window.set_always_on_top(true);
     }
 
-    // Fire AI classifier async if NLP confidence is low
-    if nlp::intent::should_fire_ai_classifier(&ctx.intent_result) {
+    // Fire AI classifier async if NLP confidence is low AND text is meaningful
+    /*
+    if captured.len() > 10 && nlp::intent::should_fire_ai_classifier(&ctx.intent_result) {
         let h2         = handle.clone();
         let text_clone = captured.clone();
         tauri::async_runtime::spawn(async move {
@@ -225,21 +263,22 @@ fn show_overlay(handle: &AppHandle) {
             };
             let key = if api_key.is_empty() { "proxy".to_string() } else { api_key };
             if let Some((intent, confidence, alts)) = ai::classify_intent(&key, &text_clone).await {
-                let refined = serde_json::json!({
+                h2.emit("intent_refined", serde_json::json!({
                     "intent":       intent,
                     "confidence":   confidence,
                     "alternatives": alts.iter().map(|(i, c)| {
                         serde_json::json!({ "intent": i, "confidence": c })
                     }).collect::<Vec<_>>()
-                });
-                h2.emit("intent_refined", refined).ok();
+                })).ok();
             }
         });
     }
+    */
 }
 
 // ── Silent run (Alt+Shift+K / Alt+Shift+L) ────────────────────────────────
-// Captures → generates → injects. Window never shown. Fully background.
+// Captures → shows loader toast → generates → injects → hides toast.
+// Main window never shown.
 
 fn run_silent(handle: &AppHandle, mode: &str) {
     let h    = handle.clone();
@@ -250,10 +289,13 @@ fn run_silent(handle: &AppHandle, mode: &str) {
         let text = capture::capture_text().unwrap_or_default();
         if text.trim().is_empty() { return; }
 
+        // 2. Show loader toast immediately so user knows something is happening
+        loader_show(&h, &mode);
+
         let ctx   = nlp::analyze(&text);
         let state = h.state::<AppState>();
 
-        // 2. Load voice profile + context memory
+        // 3. Load voice profile + context memory
         let profile = {
             if let Ok(db) = state.db.lock() {
                 db::get_voice_profile(&db).unwrap_or_default()
@@ -267,26 +309,24 @@ fn run_silent(handle: &AppHandle, mode: &str) {
             } else { vec![] }
         };
 
-        // 3. Build system prompt via NLP pipeline (same as overlay path)
+        // 4. Build system prompt
         let system_prompt = nlp::prompt::build_prompt(&h, &ctx, &mode, None, &profile, &memory);
 
-        // 4. Get API key (empty string is fine — proxy ignores it)
+        // 5. Get API key (empty = proxy handles it)
         let api_key = {
             if let Ok(db) = state.db.lock() {
                 keychain::get_api_key(&db).unwrap_or_default()
             } else { String::new() }
         };
 
-        // 5. Generate silently (non-streaming, no window events)
+        // 6. Generate silently
         match ai::generate_silent(&api_key, &system_prompt, &text).await {
             Ok(result) => {
-                // 6. Inject result directly into the source app
-                // inject_text has a 300ms delay built in — that's intentional,
-                // it gives the OS time to return focus to the source window
-                // after the hotkey releases.
+                // 7. Hide loader (shows ✓ Done briefly), then inject
+                loader_hide(&h, true);
                 inject::inject_text(result.clone());
 
-                // 7. Save to history so it shows up in the overlay panel
+                // 8. Save history
                 if let Ok(db) = state.db.lock() {
                     let _ = db::save_history(
                         &db,
@@ -303,7 +343,7 @@ fn run_silent(handle: &AppHandle, mode: &str) {
                 }
             }
             Err(e) => {
-                // Silent failure — log to console, don't crash or show overlay
+                loader_hide(&h, false);
                 eprintln!("Silent transform failed (mode={}): {}", mode, e);
             }
         }
@@ -329,14 +369,14 @@ pub fn run() {
             });
 
             // ── Tray ────────────────────────────────────────────────────
-            let quit_i = MenuItem::with_id(&handle, "quit", "Quit Prompter", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(&handle, "quit", "Quit SnapText", true, None::<&str>)?;
             let show_i = MenuItem::with_id(&handle, "show", "Show Overlay",  true, None::<&str>)?;
             let menu   = Menu::with_items(&handle, &[&show_i, &quit_i])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .tooltip("Prompter — Alt+K")
+                .tooltip("SnapText — Alt+K")
                 .on_menu_event({
                     let h = handle.clone();
                     move |_app, event| {
@@ -348,16 +388,19 @@ pub fn run() {
 
             // ── Global hotkeys ───────────────────────────────────────────
             //
-            //  Alt+K          → show overlay (manual mode selection)
-            //  Alt+Shift+K    → silent: capture → Prompt → inject
-            //  Alt+Shift+L    → silent: capture → Correct → inject
+            //  Alt+K          → show overlay (manual mode, preview before insert)
+            //  Alt+Shift+K    → silent: capture → structure as AI Prompt → inject
+            //  Alt+Shift+L    → silent: capture → rewrite to English → inject
             //
-            let k_main   = Shortcut::new(Some(Modifiers::ALT),                Code::KeyK);
+            // If a hotkey is already registered by another app, we log the error
+            // and continue — the other hotkeys still work.
+            //
+            let k_main   = Shortcut::new(Some(Modifiers::ALT),                    Code::KeyK);
             let k_prompt = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyK);
             let k_fix    = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyL);
 
             // Alt+K — toggle overlay
-            handle.global_shortcut().on_shortcut(k_main, {
+            if let Err(e) = handle.global_shortcut().on_shortcut(k_main, {
                 let h = handle.clone();
                 move |_app, _shortcut, event| {
                     if event.state() != ShortcutState::Pressed { return; }
@@ -369,29 +412,36 @@ pub fn run() {
                         }
                     }
                 }
-            })?;
+            }) {
+                eprintln!("⚠ Alt+K hotkey already taken by another app: {}. SnapText overlay will not open via this shortcut.", e);
+            }
 
-            // Alt+Shift+K — silent Prompt transform + auto-inject
-            handle.global_shortcut().on_shortcut(k_prompt, {
+            // Alt+Shift+K — silent Prompt transform
+            if let Err(e) = handle.global_shortcut().on_shortcut(k_prompt, {
                 let h = handle.clone();
                 move |_app, _shortcut, event| {
                     if event.state() != ShortcutState::Pressed { return; }
                     run_silent(&h, "Prompt");
                 }
-            })?;
+            }) {
+                eprintln!("⚠ Alt+Shift+K hotkey already taken by another app: {}. Use Alt+K overlay instead.", e);
+            }
 
-            // Alt+Shift+L — silent Correct/rewrite transform + auto-inject
-            handle.global_shortcut().on_shortcut(k_fix, {
+            // Alt+Shift+L — silent rewrite to English
+            if let Err(e) = handle.global_shortcut().on_shortcut(k_fix, {
                 let h = handle.clone();
                 move |_app, _shortcut, event| {
                     if event.state() != ShortcutState::Pressed { return; }
                     run_silent(&h, "Correct");
                 }
-            })?;
+            }) {
+                eprintln!("⚠ Alt+Shift+L hotkey already taken by another app: {}. Use Alt+K overlay instead.", e);
+            }
 
-            let _ = handle.global_shortcut().register(k_main);
-            let _ = handle.global_shortcut().register(k_prompt);
-            let _ = handle.global_shortcut().register(k_fix);
+            // Register — errors here are non-fatal, log and continue
+            if let Err(e) = handle.global_shortcut().register(k_main)   { eprintln!("Alt+K register failed: {}", e); }
+            if let Err(e) = handle.global_shortcut().register(k_prompt) { eprintln!("Alt+Shift+K register failed: {}", e); }
+            if let Err(e) = handle.global_shortcut().register(k_fix)    { eprintln!("Alt+Shift+L register failed: {}", e); }
 
             Ok(())
         })

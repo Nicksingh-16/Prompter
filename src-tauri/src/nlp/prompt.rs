@@ -130,9 +130,16 @@ fn build_task_block(mode: &str, sub_mode: Option<&str>, ctx: &TextContext) -> St
             }
         }
         "Correct" => {
-            "Fix all grammar, spelling, punctuation, and structural issues. \
-             Preserve the original tone, voice, and meaning exactly. \
-             Do not add information or change the register unless it is fundamentally broken."
+            // Alt+Shift+L: rewrite ANY language (Hinglish, broken English, Hindi, etc.)
+            // into clear, fluent, professional English. This is the core use case.
+            "You are a professional English rewriter. \
+             Rewrite the following text into clear, fluent, professional English. \
+             If the input is in Hinglish, Hindi, broken English, or any other language — \
+             output clean English only. \
+             Preserve the original meaning and intent exactly. \
+             Fix grammar, spelling, and structure. \
+             Do not add information. Do not change the tone unless it is rude — then make it polite. \
+             Output only the rewritten English text. Nothing else."
                 .into()
         }
         "Translate" => {
@@ -333,6 +340,8 @@ pub fn build_prompt(
 
     prompt.push_str(&build_memory_block(memory_data));
 
-    let clean_text = sanitize(&ctx.original);
-    format!("{}\n\n[INPUT TEXT]\n{}", prompt, clean_text)
+    // DO NOT append text here — ai.rs make_request already appends it as "Input: {text}"
+    // Appending here caused the model to receive the text twice, inflating prompt size
+    // and causing output truncation on Prompt mode.
+    prompt
 }
