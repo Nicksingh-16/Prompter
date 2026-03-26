@@ -191,6 +191,13 @@ fn get_device_id() -> String {
     ai::device_id()
 }
 
+#[tauri::command]
+async fn get_worker_usage() -> Option<serde_json::Value> {
+    ai::get_worker_usage().await.map(|(used, cap)| {
+        serde_json::json!({ "used": used, "cap": cap })
+    })
+}
+
 // ── Loader toast helpers ───────────────────────────────────────────────────
 // A tiny always-on-top window that shows while silent hotkeys are working.
 
@@ -233,7 +240,6 @@ fn loader_hide(handle: &AppHandle, success: bool) {
 // ── Show overlay (Alt+K) ───────────────────────────────────────────────────
 
 fn show_overlay(handle: &AppHandle) {
-    println!("[TRACE] show_overlay called");
     let captured = capture::capture_text().unwrap_or_default();
     let ctx      = nlp::analyze(&captured);
 
@@ -249,9 +255,8 @@ fn show_overlay(handle: &AppHandle) {
         let _ = window.set_always_on_top(true);
     }
 
-    // Fire AI classifier async if NLP confidence is low AND text is meaningful
-    /*
-    if captured.len() > 10 && nlp::intent::should_fire_ai_classifier(&ctx.intent_result) {
+    // Fire AI classifier async if NLP confidence is low
+    if nlp::intent::should_fire_ai_classifier(&ctx.intent_result) {
         let h2         = handle.clone();
         let text_clone = captured.clone();
         tauri::async_runtime::spawn(async move {
@@ -273,7 +278,6 @@ fn show_overlay(handle: &AppHandle) {
             }
         });
     }
-    */
 }
 
 // ── Silent run (Alt+Shift+K / Alt+Shift+L) ────────────────────────────────
@@ -469,6 +473,7 @@ pub fn run() {
             get_history,
             get_config_value,
             set_config_value,
+            get_worker_usage,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
