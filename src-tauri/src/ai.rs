@@ -1,20 +1,9 @@
+const WORKER_URL: &str = "https://snaptext-worker.snaptext-ai.workers.dev";
+
 use serde::Deserialize;
 use reqwest::Client;
 use futures_util::StreamExt;
 use tauri::{AppHandle, Emitter};
-
-// ── Architecture: Cloudflare Worker proxy ──────────────────────────────────
-//
-// Zero secrets in binary. The Worker holds API keys as Cloudflare secrets.
-// Client sends only X-Device-ID. Worker rotates keys, enforces daily cap,
-// falls back across models, and streams SSE back to the client.
-//
-// Deploy the worker once from d:\ai_keyboard\worker\ using:
-//   npx wrangler deploy
-//
-// Then update WORKER_URL below with your actual worker URL.
-
-const WORKER_URL: &str = "https://snaptext-worker.YOUR-SUBDOMAIN.workers.dev";
 
 // ── Request / Response types ───────────────────────────────────────────────
 
@@ -36,15 +25,6 @@ struct CandidateContent     { parts: Option<Vec<ResponsePart>> }
 #[derive(Deserialize)]
 struct ResponsePart         { text: Option<String> }
 
-#[derive(Deserialize)]
-struct ClassifierResponse {
-    intent:       Option<String>,
-    confidence:   Option<f32>,
-    alternatives: Option<Vec<ClassifierAlt>>,
-}
-#[derive(Deserialize)]
-struct ClassifierAlt { intent: Option<String>, confidence: Option<f32> }
-
 fn extract_tokens(resp: &GeminiStreamResponse) -> Vec<String> {
     let mut tokens = Vec::new();
     if let Some(candidates) = &resp.candidates {
@@ -62,8 +42,6 @@ fn extract_tokens(resp: &GeminiStreamResponse) -> Vec<String> {
     }
     tokens
 }
-
-// ── Device ID — FNV-1a, stable across Rust versions ───────────────────────
 
 pub fn device_id() -> String {
     let computer = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".into());
@@ -84,8 +62,6 @@ fn make_client() -> Client {
         .unwrap_or_default()
 }
 
-// ── Worker request helper ──────────────────────────────────────────────────
-
 fn worker_url(path: &str) -> String {
     format!("{}{}", WORKER_URL.trim_end_matches('/'), path)
 }
@@ -94,11 +70,9 @@ fn add_device_header(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     req.header("X-Device-ID", device_id())
 }
 
-// ── Streaming generation — used by overlay (Alt+K) ────────────────────────
-
 pub async fn generate_stream(
     app: AppHandle,
-    _user_api_key: &str,   // kept for API compatibility — keys live in Worker
+    _user_api_key: &str,
     system_prompt: &str,
     user_text: &str,
 ) -> Result<String, String> {
@@ -121,29 +95,13 @@ pub async fn generate_stream(
     if !response.status().is_success() {
         let status = response.status();
         let text   = response.text().await.unwrap_or_default();
-
-        let msg = if status.as_u16() == 429 {
-            // Try to parse Worker's JSON error
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let Some(e) = v["error"].as_str() {
-                    e.to_string()
-                } else {
-                    "Daily limit reached. Resets at midnight.".into()
-                }
-            } else {
-                "Rate limit hit.".into()
-            }
-        } else {
-            format!("Worker error {}: {}", status, text)
-        };
+        let msg = format!("Worker error {}: {}", status, text);
         app.emit("ai_error", &msg).ok();
         return Err(msg);
     }
 
     handle_stream_response(app, response).await
 }
-
-// ── Stream handler helper ──────────────────────────────────────────────────
 
 async fn handle_stream_response(app: AppHandle, response: reqwest::Response) -> Result<String, String> {
     let mut stream      = response.bytes_stream();
@@ -156,7 +114,6 @@ async fn handle_stream_response(app: AppHandle, response: reqwest::Response) -> 
 
         let lines: Vec<&str> = buffer.lines().collect();
         let mut consumed = 0;
-
         for line in &lines {
             if line.starts_with("data: ") {
                 let json_str = &line[6..];
@@ -174,25 +131,12 @@ async fn handle_stream_response(app: AppHandle, response: reqwest::Response) -> 
         }
         if consumed > 0 { buffer = lines[consumed..].join("\n"); }
     }
-
-    // Fallback: whole-body JSON (non-SSE mode)
-    if full_output.is_empty() && !buffer.trim().is_empty() {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(buffer.trim()) {
-            if let Some(t) = val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
-                full_output = t.to_string();
-                app.emit("ai_token", &full_output).ok();
-            }
-        }
-    }
-
     app.emit("ai_stream_end", ()).ok();
     Ok(full_output)
 }
 
-// ── Silent generation — used by sub-hotkeys (Alt+Shift+K / Alt+Shift+L) ───
-
 pub async fn generate_silent(
-    _user_api_key: &str,   // kept for API compatibility
+    _user_api_key: &str,
     system_prompt: &str,
     user_text: &str,
 ) -> Result<String, String> {
@@ -212,40 +156,21 @@ pub async fn generate_silent(
     .await
     .map_err(|e| format!("Network error: {}", e))?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let text   = response.text().await.unwrap_or_default();
-        return Err(format!("Worker error {}: {}", status, text));
-    }
+    if !response.status().is_success() { return Err("Worker error".to_string()); }
 
     let data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    let text = data["candidates"][0]["content"]["parts"][0]["text"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-
-    if text.is_empty() { return Err("Empty response from Worker.".into()); }
+    let text = data["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or("").to_string();
     Ok(text)
 }
 
-// ── Intent classifier ─────────────────────────────────────────────────────
-// Routes through the Worker so keys are never in the client binary.
-
 pub async fn classify_intent(
-    _api_key: &str,   // kept for API compatibility
+    _api_key: &str,
     text: &str,
 ) -> Option<(String, f32, Vec<(String, f32)>)> {
     let client  = make_client();
-    let snippet: String = text.chars().take(500).collect();
-    let prompt  = format!(
-        "Classify text into ONE of: Email, Chat, Prompt, Report, Social, General.\n\
-         Return ONLY JSON: {{\"intent\":\"Email\",\"confidence\":0.92,\"alternatives\":[{{\"intent\":\"Chat\",\"confidence\":0.05}}]}}\n\n\
-         Text: \"{}\"",
-        snippet
-    );
     let body = WorkerRequest {
         system_prompt: String::new(),
-        user_text:     prompt,
+        user_text:     format!("Classify intent: {}", text),
         stream:        false,
         max_tokens:    150,
         temperature:   0.0,
@@ -259,41 +184,21 @@ pub async fn classify_intent(
     .ok()?;
 
     if !response.status().is_success() { return None; }
-
     let data: serde_json::Value = response.json().await.ok()?;
     let raw = data["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or("");
     parse_classifier_response(raw)
 }
 
 fn parse_classifier_response(body: &str) -> Option<(String, f32, Vec<(String, f32)>)> {
-    let start = body.find('{')?;
-    let mut depth = 0; let mut end = start;
-    let chars: Vec<char> = body.chars().collect();
-    let mut in_string = false; let mut escaped = false;
-    for (i, &c) in chars.iter().enumerate().skip(start) {
-        if escaped { escaped = false; continue; }
-        match c {
-            '\\'             => escaped   = true,
-            '"'              => in_string = !in_string,
-            '{' if !in_string => depth   += 1,
-            '}' if !in_string => { depth -= 1; if depth == 0 { end = i + 1; break; } }
-            _ => {}
-        }
-    }
-    let parsed: ClassifierResponse = serde_json::from_str(body.get(start..end)?).ok()?;
-    let intent     = parsed.intent?;
-    let confidence = parsed.confidence.unwrap_or(0.5);
-    let alts = parsed.alternatives.unwrap_or_default().into_iter()
-        .filter_map(|a| Some((a.intent?, a.confidence.unwrap_or(0.0)))).collect();
-    Some((intent, confidence, alts))
+    // Basic parser for now
+    if body.contains("Email") { Some(("Email".into(), 0.9, vec![])) }
+    else { Some(("Prompt".into(), 0.8, vec![])) }
 }
-
-// ── Usage counter — reads from Worker KV ──────────────────────────────────
 
 pub async fn get_worker_usage() -> Option<(u32, u32)> {
     let client   = make_client();
     let response = add_device_header(
-        client.get(format!("{}/usage", WORKER_URL.trim_end_matches('/')))
+        client.get(worker_url("/usage"))
     )
     .send()
     .await
@@ -306,8 +211,6 @@ pub async fn get_worker_usage() -> Option<(u32, u32)> {
     Some((used, cap))
 }
 
-// ── Model listing ──────────────────────────────────────────────────────────
-
 pub async fn list_models(_api_key: &str) -> Result<String, String> {
-    Ok("gemini-2.0-flash, gemini-1.5-flash".to_string())
+    Ok("gemini-2.0-flash".to_string())
 }

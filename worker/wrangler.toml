@@ -4,7 +4,7 @@ compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "USAGE"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "fa3eb3347c4648d5be763bb8b219627f"
 
 # Secrets (set via: npx wrangler secret put GEMINI_KEY_1)
 # GEMINI_KEY_1, GEMINI_KEY_2, GEMINI_KEY_3, PRO_SECRET
