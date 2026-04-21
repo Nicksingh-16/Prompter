@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SnapText Promo</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#0e0e10;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:rgba(255,255,255,.92);-webkit-font-smoothing:antialiased}
+
+/* DESIGN TOKENS — exact from index.css */
+:root{
+  --blue:#3b82f6;--blue-glow:rgba(59,130,246,.35);
+  --surface:#0e0e10;--surface2:#161618;
+  --border:rgba(255,255,255,.07);
+  --text:rgba(255,255,255,.92);--text-muted:rgba(255,255,255,.45);--text-dim:rgba(255,255,255,.22);
+}
+
+/* SCENE ENGINE */
+.scene{position:absolute;inset:0;opacity:0;transition:opacity .55s ease;pointer-events:none}
+.scene.on{opacity:1}
+
+/* DESKTOP BG */
+.desk{position:absolute;inset:0;background:linear-gradient(145deg,#08090f,#0c0d18)}
+.desk-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(59,130,246,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,.018) 1px,transparent 1px);background-size:60px 60px}
+
+/* TASKBAR */
+.tbar{position:absolute;bottom:0;left:0;right:0;height:44px;background:rgba(8,8,12,.95);backdrop-filter:blur(20px);border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 16px;gap:6px;z-index:200}
+.tb-s{font-size:18px;margin-right:4px;opacity:.6}
+.tb-app{width:40px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:5px;font-size:17px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07)}
+.tb-app.on{background:rgba(59,130,246,.16);border-color:rgba(59,130,246,.35)}
+.tb-r{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px;color:rgba(255,255,255,.38)}
+.snap-tray{display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.5)}
+.snap-dot{width:7px;height:7px;border-radius:50%;background:#3b82f6;box-shadow:0 0 6px rgba(59,130,246,.7);animation:sdp 2.5s ease-in-out infinite}
+@keyframes sdp{0%,100%{opacity:.6}50%{opacity:1}}
+.snap-ico{width:20px;height:20px;background:linear-gradient(135deg,#3b82f6,#6366f1);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff}
+
+/* WINDOW CHROME */
+.win{position:absolute;background:#111115;border:1px solid rgba(255,255,255,.09);border-radius:10px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.65)}
+.wbar{height:38px;background:#0d0d11;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;padding:0 13px;gap:6px}
+.wd{width:12px;height:12px;border-radius:50%}
+.wd.r{background:#ff5f56}.wd.y{background:#ffbd2e}.wd.g{background:#27c93f}
+.wtitle{font-size:12px;color:rgba(255,255,255,.3);flex:1;text-align:center}
+.wbody{height:calc(100% - 38px);overflow:hidden}
+
+/* CARET BLINK */
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ───────────────────────────────────────────
+   THE REAL PILL — exact replica of pill.html
+─────────────────────────────────────────── */
+.snap-pill-widget{
+  position:absolute;
+  display:inline-flex;
+  align-items:center;
+  gap:1px;
+  background:#1a1a1e;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:8px;
+  padding:3px;
+  box-shadow:0 8px 32px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.3);
+  z-index:500;
+  opacity:0;
+  transform:translateY(3px) scale(.97);
+  transition:opacity .12s ease,transform .12s ease;
+}
+.snap-pill-widget.show{opacity:1;transform:translateY(0) scale(1)}
+.snap-pill-widget.hide{opacity:0;transform:translateY(-3px) scale(.97);transition:opacity .15s ease,transform .15s ease}
+
+.pill-btn{
+  background:transparent;border:none;border-radius:6px;
+  padding:5px 12px;color:rgba(255,255,255,.55);
+  font-size:11px;font-weight:500;letter-spacing:.2px;
+  cursor:pointer;white-space:nowrap;transition:all .1s ease;
+  font-family:'Inter',sans-serif;
+}
+.pill-btn:hover{background:rgba(255,255,255,.08);color:#fff}
+.pill-btn.accent{background:rgba(99,102,241,.15);color:rgba(129,140,248,.9)}
+.pill-btn.accent:hover{background:rgba(99,102,241,.25);color:#a5b4fc}
+.pill-btn.clicked{transform:scale(.96)}
+.pill-btn.pulsing{animation:pillGlow 1s ease-in-out infinite}
+@keyframes pillGlow{0%,100%{background:rgba(99,102,241,.15)}50%{background:rgba(99,102,241,.3);color:#c4b5fd}}
+.pill-divider-line{width:1px;height:14px;background:rgba(255,255,255,.08);margin:0 1px;flex-shrink:0}
+.pill-dismiss{background:transparent;border:none;border-radius:5px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.25);font-size:13px;cursor:pointer;transition:all .1s ease}
+
+/* ───────────────────────────────────────────
+   LOADER TOAST — exact replica from index.css
+─────────────────────────────────────────── */
+.loader-toast-widget{
+  position:absolute;
+  display:inline-flex;align-items:center;gap:10px;
+  background:rgba(14,14,16,.95);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:10px 18px;
+  box-shadow:0 12px 40px rgba(0,0,0,.6),0 0 0 .5px rgba(0,0,0,.4);
+  color:rgba(255,255,255,.9);font-size:13px;font-weight:500;white-space:nowrap;
+  z-index:500;opacity:0;
+  font-family:'Inter',sans-serif;
+}
+.loader-toast-widget.show{animation:toastIn .2s cubic-bezier(.22,1,.36,1) forwards}
+.loader-toast-widget.done{border-color:rgba(16,185,129,.2)}
+@keyframes toastIn{from{opacity:0;transform:translateY(6px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+.loader-dot{width:8px;height:8px;background:var(--blue);border-radius:50%;flex-shrink:0;animation:dotPulse 1s ease-in-out infinite}
+.loader-dot.done{background:#10b981;animation:none}
+@keyframes dotPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.65)}}
+
+/* ───────────────────────────────────────────
+   THE REAL OVERLAY — exact replica from App.tsx + index.css
+─────────────────────────────────────────── */
+.glass-card{
+  position:absolute;
+  width:440px;
+  background:#161618;
+  border:1px solid rgba(59,130,246,.18);
+  border-radius:18px;
+  padding:20px 22px 16px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.04),
+    0 32px 80px rgba(0,0,0,.7),
+    0 0 0 .5px rgba(0,0,0,.5),
+    0 0 48px rgba(59,130,246,.08),
+    0 0 96px rgba(99,102,241,.05);
+  display:flex;flex-direction:column;
+  z-index:600;opacity:0;
+  transform:scale(.95) translateY(8px);
+  transition:opacity .35s cubic-bezier(.22,1,.36,1),transform .35s cubic-bezier(.22,1,.36,1);
+  font-size:13px;
+}
+.glass-card.show{opacity:1;transform:scale(1) translateY(0)}
+.glass-card.hide{opacity:0;transform:scale(.95) translateY(8px);transition:opacity .2s ease,transform .2s ease}
+
+/* header row */
+.ov-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.ov-title-row{display:flex;align-items:center;gap:7px}
+.ov-sparkle{color:#3b82f6;font-size:15px}
+.ov-name{font-weight:700;font-size:13.5px;letter-spacing:-.02em}
+.ov-gear{font-size:12px;opacity:.3;margin-left:2px;cursor:pointer}
+.ov-right-row{display:flex;align-items:center;gap:8px}
+.ov-badge{font-size:9px;padding:2px 7px;border-radius:10px;font-weight:500}
+.ov-badge.app-ctx{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.45)}
+.ov-badge.lang{background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);color:#a5b4fc;font-weight:600}
+.ov-history-btn{padding:4px 8px;border-radius:8px;font-size:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.45);cursor:pointer;display:flex;align-items:center}
+.ov-usage{font-size:10px;font-weight:600;color:rgba(255,255,255,.22)}
+.ov-aimode{font-size:10px;color:rgba(255,255,255,.22)}
+
+/* text preview */
+.text-preview{font-size:11.5px;color:rgba(255,255,255,.45);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:8px 12px;background:rgba(255,255,255,.025);border-radius:9px;border:1px solid rgba(255,255,255,.04);line-height:1.4;margin-bottom:6px}
+
+/* tone mirror */
+.tone-mirror{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.tone-row{display:flex;align-items:center;gap:7px}
+.tone-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.tone-text{font-size:10.5px;font-weight:600}
+.tone-sub{font-size:9.5px;opacity:.75;padding-left:13px;font-style:italic}
+
+/* mode pills bar */
+.mode-pills-row{display:flex;gap:6px;align-items:center;margin-bottom:10px}
+.mode-pill-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.45);font-family:'Inter',sans-serif;transition:all .18s}
+.mode-pill-btn.active{background:#3b82f6;border-color:#3b82f6;color:#fff;box-shadow:0 0 16px rgba(59,130,246,.35)}
+.mode-pill-btn.nlp-hint{opacity:.9}
+.mode-pill-more{margin-left:auto;padding:5px 9px;opacity:.4}
+
+/* token container */
+.token-container{font-family:'IBM Plex Mono',ui-monospace,monospace;background:rgba(0,0,0,.3);border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.7;color:#d4d8e2;overflow-y:auto;border:1px solid rgba(255,255,255,.04);white-space:pre-wrap;min-height:60px;max-height:260px;flex-shrink:0}
+.token-generating::after{content:'▋';display:inline-block;margin-left:2px;color:#3b82f6;animation:blink .9s step-end infinite}
+
+/* action buttons */
+.ov-actions{display:flex;gap:7px;margin-top:12px}
+.ov-transform-btn{flex-grow:1;padding:9px;background:#3b82f6;color:#fff;font-weight:700;font-size:13px;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-family:'Inter',sans-serif;box-shadow:0 0 18px rgba(59,130,246,.35)}
+.ov-icon-btn{padding:9px 13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.45);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px}
+.ov-icon-btn.success{color:#22c55e}
+
+/* shortcut hints */
+.shortcut-hints{display:flex;justify-content:center;gap:16px;font-size:9.5px;color:rgba(255,255,255,.22);letter-spacing:.05em;font-weight:500;text-transform:uppercase;margin-top:12px;opacity:.7}
+
+/* CTRL+C BADGE */
+.ctrlc-badge{position:absolute;font-family:'IBM Plex Mono',monospace;font-size:13px;color:rgba(255,255,255,.7);background:rgba(0,0,0,.85);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:7px 16px;z-index:400;opacity:0;pointer-events:none;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+.ctrlc-badge.show{animation:kbdin .7s ease forwards}
+@keyframes kbdin{0%{opacity:0;transform:translateY(4px)}20%{opacity:1;transform:translateY(0)}75%{opacity:1}100%{opacity:0}}
+
+/* TEXT SELECTION */
+.sel{background:rgba(59,130,246,.25);border-radius:3px;transition:background .3s}
+
+/* SCENE FADE OVERLAP HELPER */
+.inj-flash{position:absolute;inset:0;background:rgba(59,130,246,.06);pointer-events:none;opacity:0;z-index:700}
+.inj-flash.go{animation:ifl .5s ease}
+@keyframes ifl{0%{opacity:0}25%{opacity:1}100%{opacity:0}}
+
+/* NOISE LAYER */
+body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.03'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.28}
+
+/* ══════════════════════
+   WHATSAPP LAYOUT
+══════════════════════ */
+.wa-win{left:60px;top:40px;width:1800px;height:992px}
+.wa-layout{display:flex;height:100%}
+.wa-side{width:320px;border-right:1px solid rgba(255,255,255,.07);background:#0c0c10;flex-shrink:0;display:flex;flex-direction:column}
+.wa-side-head{padding:14px 16px;font-size:15px;font-weight:600;color:rgba(255,255,255,.78);border-bottom:1px solid rgba(255,255,255,.06)}
+.wa-search-bar{margin:10px 14px;background:rgba(255,255,255,.06);border:none;border-radius:8px;padding:8px 14px;font-size:13px;color:rgba(255,255,255,.4);width:calc(100% - 28px);outline:none;font-family:inherit}
+.wa-chat-item{display:flex;gap:11px;align-items:center;padding:11px 15px;cursor:pointer}
+.wa-chat-item.active{background:rgba(59,130,246,.1)}
+.wa-avatar{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.wa-chat-name{font-size:14px;font-weight:500;color:rgba(255,255,255,.8)}
+.wa-chat-last{font-size:12px;color:rgba(255,255,255,.34);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:212px}
+.wa-main{flex:1;display:flex;flex-direction:column;background:#0a0a0e;min-width:0}
+.wa-chat-header{padding:11px 20px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:11px;background:#0c0c10;flex-shrink:0}
+.wa-chat-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px}
+.wa-chat-name-h{font-size:14px;font-weight:600;color:rgba(255,255,255,.85)}
+.wa-chat-status{font-size:11px;color:rgba(57,217,138,.7);margin-top:1px}
+.wa-messages{flex:1;padding:24px 40px;display:flex;flex-direction:column;gap:14px;justify-content:flex-end;overflow:hidden}
+.wa-bubble{max-width:60%;padding:11px 17px;border-radius:15px;font-size:15px;line-height:1.55}
+.wa-bubble.them{background:rgba(255,255,255,.09);border-bottom-left-radius:4px;align-self:flex-start;color:rgba(255,255,255,.85)}
+.wa-bubble.me{background:#1a4c90;border-bottom-right-radius:4px;align-self:flex-end;color:rgba(255,255,255,.9)}
+.wa-time{font-size:11px;color:rgba(255,255,255,.28);text-align:right;margin-top:4px}
+.wa-input-row{padding:11px 20px;border-top:1px solid rgba(255,255,255,.07);display:flex;gap:9px;align-items:center;background:#0c0c10;flex-shrink:0}
+.wa-input-field{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:9px 20px;font-size:14px;color:rgba(255,255,255,.4);font-family:inherit;outline:none;transition:color .3s,border-color .3s}
+.wa-input-field.filled{color:rgba(255,255,255,.88);border-color:rgba(57,217,138,.4)}
+.wa-send-btn{width:36px;height:36px;background:#3b82f6;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+
+/* ══════════════════════
+   OUTLOOK LAYOUT
+══════════════════════ */
+.ol-win{left:60px;top:40px;width:1800px;height:992px}
+.ol-layout{display:flex;height:100%}
+.ol-nav{width:200px;background:#0b0b0f;border-right:1px solid rgba(255,255,255,.07);flex-shrink:0;padding:12px 0}
+.ol-nav-item{padding:9px 18px;font-size:13px;color:rgba(255,255,255,.45);cursor:pointer;display:flex;align-items:center;gap:9px}
+.ol-nav-item.active{background:rgba(59,130,246,.12);color:rgba(255,255,255,.85)}
+.ol-list{width:300px;background:#0d0d11;border-right:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.ol-list-hd{padding:12px 16px;font-size:11px;font-weight:600;color:rgba(255,255,255,.3);letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.06)}
+.ol-list-item{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+.ol-list-item.active{background:rgba(59,130,246,.1)}
+.ol-list-from{font-size:13px;font-weight:600;color:rgba(255,255,255,.78);margin-bottom:3px}
+.ol-list-sub{font-size:12px;color:rgba(255,255,255,.44)}
+.ol-compose{flex:1;display:flex;flex-direction:column;background:#0e0e12}
+.ol-toolbar{padding:9px 20px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;gap:6px;align-items:center;background:#0b0b0f;flex-shrink:0}
+.ol-tbtn{padding:5px 11px;font-size:12px;color:rgba(255,255,255,.45);border:1px solid rgba(255,255,255,.08);border-radius:5px;background:rgba(255,255,255,.03);cursor:pointer;font-family:inherit}
+.ol-fields{padding:0 24px;border-bottom:1px solid rgba(255,255,255,.06)}
+.ol-field-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:14px}
+.ol-field-lbl{color:rgba(255,255,255,.22);width:48px;flex-shrink:0;font-size:13px}
+.ol-field-val{color:rgba(255,255,255,.7)}
+.ol-field-val.blue{color:#60a5fa}
+.ol-compose-body{flex:1;padding:22px 24px;font-size:15px;line-height:1.85;color:rgba(255,255,255,.62);overflow:hidden}
+.ol-injected{color:rgba(255,255,255,.78);animation:fadeInTxt .6s ease forwards;opacity:0}
+@keyframes fadeInTxt{to{opacity:1}}
+
+/* ══════════════════════
+   VSCODE LAYOUT
+══════════════════════ */
+.vsc-win{left:60px;top:40px;width:1800px;height:992px}
+.vsc-layout{display:flex;height:100%}
+.vsc-activity{width:48px;background:#0b0b0f;border-right:1px solid rgba(255,255,255,.06);flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:10px;gap:14px}
+.vsc-act-ico{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:16px;color:rgba(255,255,255,.3)}
+.vsc-act-ico.on{color:rgba(255,255,255,.85)}
+.vsc-exp{width:240px;background:#0d0d11;border-right:1px solid rgba(255,255,255,.07);flex-shrink:0;padding:8px 0}
+.vsc-exp-hd{padding:6px 16px;font-size:11px;font-weight:600;color:rgba(255,255,255,.3);letter-spacing:1.5px;text-transform:uppercase}
+.vsc-file{padding:5px 20px;font-size:13px;color:rgba(255,255,255,.45);cursor:pointer;display:flex;align-items:center;gap:8px}
+.vsc-file.on{background:rgba(59,130,246,.12);color:rgba(255,255,255,.85)}
+.vsc-editor-area{flex:1;display:flex;flex-direction:column;min-width:0}
+.vsc-tabs{display:flex;border-bottom:1px solid rgba(255,255,255,.07);background:#0d0d11;flex-shrink:0}
+.vsc-tab{padding:8px 18px;font-size:13px;color:rgba(255,255,255,.38);border-right:1px solid rgba(255,255,255,.06);cursor:pointer;display:flex;align-items:center;gap:7px;font-family:'IBM Plex Mono',monospace}
+.vsc-tab.on{background:#111115;color:rgba(255,255,255,.85);border-top:1px solid #3b82f6}
+.vsc-code-area{flex:1;display:flex;overflow:hidden}
+.vsc-gutter{width:52px;background:rgba(0,0,0,.2);border-right:1px solid rgba(255,255,255,.05);padding-top:12px;display:flex;flex-direction:column;align-items:flex-end;padding-right:10px;gap:0;flex-shrink:0}
+.ln{font-family:'IBM Plex Mono',monospace;font-size:13px;color:rgba(255,255,255,.18);line-height:1.65}
+.ln.e{color:rgba(248,113,113,.4)}
+.vsc-code-content{flex:1;padding:12px 20px;font-family:'IBM Plex Mono',monospace;font-size:13.5px;line-height:1.65;color:rgba(255,255,255,.72);overflow:hidden}
+.ck{color:#c084fc}.cs{color:#86efac}.ce{color:#f87171}.cc{color:rgba(255,255,255,.28)}.cf{color:#60a5fa}.cn{color:#fb923c}
+.sel-block{background:rgba(59,130,246,.2)}
+
+/* ══════════════════════
+   SCENE 1 — SLACK HOOK
+══════════════════════ */
+.s1-win{left:250px;top:50px;width:1420px;height:960px}
+.sl-layout{display:flex;height:100%}
+.sl-sidebar{width:260px;background:#101014;border-right:1px solid rgba(255,255,255,.07);flex-shrink:0;display:flex;flex-direction:column}
+.sl-ws-header{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:9px}
+.sl-ws-name{font-size:15px;font-weight:700;color:rgba(255,255,255,.9)}
+.sl-status-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.sl-ch{padding:5px 16px;font-size:14px;color:rgba(255,255,255,.42);cursor:pointer;display:flex;align-items:center;gap:7px}
+.sl-ch.active{background:rgba(59,130,246,.14);color:rgba(255,255,255,.9)}
+.sl-ch.unread{color:rgba(255,255,255,.88);font-weight:600}
+.sl-unread-badge{margin-left:auto;background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;min-width:18px;text-align:center}
+.sl-section-hd{padding:8px 16px 4px;font-size:11px;font-weight:700;color:rgba(255,255,255,.25);letter-spacing:.8px;text-transform:uppercase}
+.sl-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.sl-ch-header{padding:12px 20px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:10px;background:#0d0d11;flex-shrink:0}
+.sl-ch-name{font-size:15px;font-weight:700;color:rgba(255,255,255,.9)}
+.sl-members{font-size:12px;color:rgba(255,255,255,.32);margin-left:auto}
+.sl-messages{flex:1;padding:24px 28px;display:flex;flex-direction:column;gap:18px;overflow:hidden;justify-content:flex-end}
+.sl-msg{display:flex;gap:12px;align-items:flex-start}
+.sl-msg-avatar{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.sl-msg-name{font-size:13.5px;font-weight:700;color:rgba(255,255,255,.85);margin-bottom:3px}
+.sl-msg-name span{font-size:11px;color:rgba(255,255,255,.25);font-weight:400;margin-left:8px}
+.sl-msg-text{font-size:14.5px;color:rgba(255,255,255,.7);line-height:1.55}
+.sl-input-row{padding:12px 20px;border-top:1px solid rgba(255,255,255,.07);background:#0d0d11;flex-shrink:0}
+.sl-input-box{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 16px;font-size:14px;color:rgba(255,255,255,.5);font-family:inherit;min-height:44px;display:flex;align-items:center;transition:color .3s}
+.s1-ctr{position:absolute;top:200px;right:180px;background:rgba(255,50,70,.09);border:1px solid rgba(255,50,70,.22);border-radius:14px;padding:22px 34px;opacity:0;transform:translateY(10px);transition:opacity .5s ease,transform .5s ease}
+.s1-ctr-n{font-size:56px;font-weight:700;color:#ff4d6d;line-height:1;display:block}
+.s1-ctr-l{font-size:13px;color:rgba(255,100,120,.6);margin-top:7px;display:block;letter-spacing:.3px}
+
+/* ══════════════════════
+   SCENE 5 — CALLOUTS
+══════════════════════ */
+#sc5{background:linear-gradient(145deg,#060610,#08091a);display:flex;align-items:center;justify-content:center}
+.s5-wrap{display:flex;border:1px solid rgba(255,255,255,.07);border-radius:20px;overflow:hidden;box-shadow:0 40px 100px rgba(0,0,0,.55)}
+.s5-card{width:560px;padding:68px 58px;display:flex;flex-direction:column;gap:18px;opacity:0;transform:translateY(14px);background:rgba(255,255,255,.02)}
+.s5-card:not(:last-child){border-right:1px solid rgba(255,255,255,.07)}
+.s5c1{animation:slin .55s ease .15s forwards}
+.s5c2{animation:slin .55s ease .75s forwards}
+.s5c3{animation:slin .55s ease 1.35s forwards}
+@keyframes slin{to{opacity:1;transform:translateY(0)}}
+.s5-ic{font-size:54px;line-height:1;margin-bottom:4px}
+.s5-tt{font-size:30px;font-weight:700;color:rgba(255,255,255,.95);line-height:1.2}
+.s5-ds{font-size:15px;color:rgba(255,255,255,.4);line-height:1.78;font-weight:300}
+.s5-tgs{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
+.s5-tg{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.37);background:rgba(255,255,255,.04)}
+
+/* ══════════════════════
+   SCENE 6 — CTA
+══════════════════════ */
+#sc6{background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.cta-bloom{position:absolute;width:1000px;height:1000px;border-radius:50%;background:radial-gradient(circle,rgba(99,102,241,.12) 0%,transparent 68%);top:50%;left:50%;transform:translate(-50%,-50%);animation:blm 3.5s ease-in-out infinite}
+@keyframes blm{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.07)}}
+.cta-l{font-size:84px;font-weight:300;color:rgba(255,255,255,.42);letter-spacing:-3px;font-style:italic;opacity:0}
+.cta-l.l1{animation:lin .8s ease .3s forwards}
+.cta-l.l2{animation:lin .8s ease 1.1s forwards;margin-bottom:52px}
+@keyframes lin{to{opacity:1}}
+.cta-brand{display:flex;flex-direction:column;align-items:center;gap:16px;opacity:0;animation:lgi .7s cubic-bezier(.16,1,.3,1) 2s forwards}
+@keyframes lgi{0%{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+.cta-ico{width:92px;height:92px;background:linear-gradient(135deg,#3b82f6,#6366f1);border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:700;color:#fff;box-shadow:0 0 60px rgba(59,130,246,.5),0 0 130px rgba(59,130,246,.18)}
+.cta-nm{font-size:36px;font-weight:700;color:#fff;letter-spacing:5px}
+.cta-url{font-size:15px;color:rgba(99,102,241,.65);letter-spacing:2px;margin-top:6px;font-family:'IBM Plex Mono',monospace}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ SCENE 1: HOOK (SLACK) ══════════════ -->
+<div class="scene on" id="sc1">
+  <div class="desk"><div class="desk-grid"></div></div>
+  <div class="win s1-win">
+    <div class="wbar"><div class="wd r"></div><div class="wd y"></div><div class="wd g"></div><div class="wtitle">Slack — Work Workspace</div></div>
+    <div class="wbody">
+      <div class="sl-layout">
+        <div class="sl-sidebar">
+          <div class="sl-ws-header"><div class="sl-status-dot"></div><div class="sl-ws-name">Vedcool</div></div>
+          <div style="padding:12px 0 4px"><div class="sl-section-hd">Channels</div></div>
+          <div class="sl-ch">🔹 general <span class="sl-unread-badge" style="margin-left:auto">5</span></div>
+          <div class="sl-ch unread">🔹 marketing <span class="sl-unread-badge">12</span></div>
+          <div class="sl-ch unread">🔹 client-beta <span class="sl-unread-badge">3</span></div>
+          <div class="sl-ch active">🔹 project-launch</div>
+          <div style="padding:16px 0 4px"><div class="sl-section-hd">Direct Messages</div></div>
+          <div class="sl-ch unread">🟢 Rohan (PM) <span class="sl-unread-badge">4</span></div>
+          <div class="sl-ch">⚫ Priya</div>
+          <div class="sl-ch">⚫ Dev Team</div>
+        </div>
+        <div class="sl-main">
+          <div class="sl-ch-header">
+            <span style="font-size:16px">🔹</span>
+            <div class="sl-ch-name">project-launch</div>
+            <div class="sl-members">14 members</div>
+          </div>
+          <div class="sl-messages">
+            <div class="sl-msg">
+              <div class="sl-msg-avatar" style="background:#1a3558">🧑‍💼</div>
+              <div><div class="sl-msg-name">Rohan <span>Today 10:14 AM</span></div><div class="sl-msg-text">Hey, can you write a quick follow-up to the client about timeline delays? Keep it professional 🙏</div></div>
+            </div>
+            <div class="sl-msg">
+              <div class="sl-msg-avatar" style="background:#1a3828">👩</div>
+              <div><div class="sl-msg-name">Priya <span>Today 10:28 AM</span></div><div class="sl-msg-text">Also need the weekly report summary drafted — same as last week's format but updated numbers</div></div>
+            </div>
+            <div class="sl-msg">
+              <div class="sl-msg-avatar" style="background:#281a38">🧑‍💻</div>
+              <div><div class="sl-msg-name">Karan <span>Today 11:02 AM</span></div><div class="sl-msg-text">Can someone reply to the beta users asking about the feature ETA? We got 6 emails this morning about it</div></div>
+            </div>
+            <div class="sl-msg">
+              <div class="sl-msg-avatar" style="background:#1a3558">🧑‍💼</div>
+              <div><div class="sl-msg-name">Rohan <span>Today 11:37 AM</span></div><div class="sl-msg-text">One more — need a polite decline for the partnership request from YX Ventures. Similar to what we sent last month</div></div>
+            </div>
+          </div>
+          <div class="sl-input-row">
+            <div class="sl-input-box" id="s1-input" style="color:rgba(255,255,255,.82)">
+              <span id="s1-typed"></span><span id="s1-cursor" style="display:inline-block;width:2px;height:16px;background:rgba(255,255,255,.6);vertical-align:middle;margin-left:1px;animation:blink 1s step-end infinite"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ctrl+C×2 badge for scene 1 -->
+  <div class="ctrlc-badge" id="s1-kbd" style="left:520px;top:800px">Ctrl+C  ×2</div>
+
+  <!-- Pill for scene 1 — appears over Rohan's last message -->
+  <div class="snap-pill-widget" id="s1-pill" style="left:520px;top:845px">
+    <button class="pill-btn accent" id="s1-reply-btn">Reply</button>
+    <button class="pill-btn accent">Do</button>
+    <button class="pill-btn">Fix</button>
+    <button class="pill-btn">Prompt</button>
+    <div class="pill-divider-line"></div>
+    <button class="pill-dismiss">×</button>
+  </div>
+
+  <!-- Toast for scene 1 -->
+  <div class="loader-toast-widget" id="s1-toast" style="left:520px;top:845px">
+    <div class="loader-dot" id="s1-dot"></div>
+    <span id="s1-toast-txt">Generating…</span>
+  </div>
+
+  <div class="tbar"><div class="tb-s">⊞</div><div class="tb-app on">💬</div><div class="tb-app">📧</div><div class="tb-app">🌐</div><div class="tb-app">🖥</div><div class="tb-r"><div class="snap-tray"><div class="snap-ico">S</div><div class="snap-dot"></div><span>SnapText</span></div><span>11:42 AM</span></div></div>
+</div>
+
+<!-- ══════════════ SCENE 2: WHATSAPP → CTRL+C×2 → PILL → REPLY ══════════════ -->
+<div class="scene" id="sc2">
+  <div class="desk"><div class="desk-grid"></div></div>
+  <div class="win wa-win">
+    <div class="wbar"><div class="wd r"></div><div class="wd y"></div><div class="wd g"></div><div class="wtitle">WhatsApp — Google Chrome</div></div>
+    <div class="wbody">
+      <div class="wa-layout">
+        <div class="wa-side">
+          <div class="wa-side-head">WhatsApp</div>
+          <input class="wa-search-bar" placeholder="🔍  Search or start new chat" readonly>
+          <div class="wa-chat-item active"><div class="wa-avatar" style="background:#1a3558">🧑</div><div><div class="wa-chat-name">Arjun Bhai</div><div class="wa-chat-last">are yaar kab aayega tu 😅</div></div></div>
+          <div class="wa-chat-item"><div class="wa-avatar" style="background:#1a3828">👩</div><div><div class="wa-chat-name">Priya</div><div class="wa-chat-last">kal milte hain ✓✓</div></div></div>
+          <div class="wa-chat-item"><div class="wa-avatar" style="background:#281a38">🧑‍💼</div><div><div class="wa-chat-name">Work Group</div><div class="wa-chat-last">3pm meeting confirmed</div></div></div>
+          <div class="wa-chat-item"><div class="wa-avatar" style="background:#381a1a">👨‍💻</div><div><div class="wa-chat-name">Dev Team</div><div class="wa-chat-last">PR merged ✅</div></div></div>
+        </div>
+        <div class="wa-main">
+          <div class="wa-chat-header">
+            <div class="wa-chat-avatar" style="background:#1a3558">🧑</div>
+            <div><div class="wa-chat-name-h">Arjun Bhai</div><div class="wa-chat-status">online</div></div>
+          </div>
+          <div class="wa-messages">
+            <div class="wa-bubble them">Bhai aaj plan kya hai sach mein? 🤔<div class="wa-time">11:28</div></div>
+            <div class="wa-bubble me">Kuch nahi yaar, ghar pe hoon<div class="wa-time">11:30 ✓✓</div></div>
+            <div class="wa-bubble them">chalte hain kahin bahar<div class="wa-time">11:33</div></div>
+            <div class="wa-bubble me">haan bilkul chalega<div class="wa-time">11:35 ✓✓</div></div>
+            <!-- TARGET MESSAGE — gets selection highlight -->
+            <div class="wa-bubble them" id="s2-msg" style="transition:outline .3s">
+              are yaar kab aayega tu, sab wait kar rahe hain 😅
+              <div class="wa-time">11:41</div>
+            </div>
+          </div>
+          <div class="wa-input-row">
+            <div class="wa-input-field" id="s2-input">Type a message</div>
+            <div class="wa-send-btn">➤</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTRL+C BADGE -->
+  <div class="ctrlc-badge" id="s2-kbd" style="left:600px;top:830px">Ctrl+C  ×2</div>
+
+  <!-- REAL PILL (exact replica of pill.html) -->
+  <div class="snap-pill-widget" id="s2-pill" style="left:600px;top:875px">
+    <button class="pill-btn accent" id="s2-reply">Reply</button>
+    <button class="pill-btn accent">Do</button>
+    <button class="pill-btn">Fix</button>
+    <button class="pill-btn">Prompt</button>
+    <div class="pill-divider-line"></div>
+    <button class="pill-dismiss">×</button>
+  </div>
+
+  <!-- LOADER TOAST (appears after pill click, exact replica from index.css) -->
+  <div class="loader-toast-widget" id="s2-toast" style="left:600px;top:875px">
+    <div class="loader-dot" id="s2-dot"></div>
+    <span id="s2-toast-txt">Generating…</span>
+  </div>
+
+  <div class="inj-flash" id="s2-flash"></div>
+  <div class="tbar"><div class="tb-s">⊞</div><div class="tb-app">📧</div><div class="tb-app on">🌐</div><div class="tb-app">🖥</div><div class="tb-r"><div class="snap-tray"><div class="snap-ico">S</div><div class="snap-dot"></div><span>SnapText</span></div><span>11:41 AM</span></div></div>
+</div>
+
+<!-- ══════════════ SCENE 3: OUTLOOK → ALT+K → OVERLAY → DO ══════════════ -->
+<div class="scene" id="sc3">
+  <div class="desk"><div class="desk-grid"></div></div>
+  <div class="win ol-win">
+    <div class="wbar"><div class="wd r"></div><div class="wd y"></div><div class="wd g"></div><div class="wtitle">Compose — Outlook</div></div>
+    <div class="wbody">
+      <div class="ol-layout">
+        <div class="ol-nav">
+          <div class="ol-nav-item">📥 Inbox</div>
+          <div class="ol-nav-item active">✉️ Compose</div>
+          <div class="ol-nav-item">📤 Sent</div>
+          <div class="ol-nav-item">⭐ Starred</div>
+        </div>
+        <div class="ol-list">
+          <div class="ol-list-hd">Drafts</div>
+          <div class="ol-list-item active"><div class="ol-list-from">John (Client)</div><div class="ol-list-sub">Project update…</div></div>
+          <div class="ol-list-item"><div class="ol-list-from">Weekly Report</div><div class="ol-list-sub">Team sync notes</div></div>
+        </div>
+        <div class="ol-compose">
+          <div class="ol-toolbar">
+            <div class="ol-tbtn">B</div><div class="ol-tbtn">I</div><div class="ol-tbtn">U</div><div class="ol-tbtn">A↓</div>
+            <div class="ol-tbtn" style="background:rgba(59,130,246,.15);border-color:rgba(59,130,246,.3);color:#60a5fa;margin-left:auto">Send ➤</div>
+          </div>
+          <div class="ol-fields">
+            <div class="ol-field-row"><span class="ol-field-lbl">To</span><span class="ol-field-val blue">john.carter@client.com</span></div>
+            <div class="ol-field-row"><span class="ol-field-lbl">Sub</span><span class="ol-field-val">Project update</span></div>
+          </div>
+          <!-- Email body — shows rough notes, then gets replaced -->
+          <div class="ol-compose-body" id="s3-body">
+            <span class="sel" id="s3-notes">mail karna hai John ko, project delay ho gaya, 2 din aur chahiye, reasonable explain karna hai, professional tone rakho</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ALT+K BADGE -->
+  <div class="ctrlc-badge" id="s3-kbd" style="left:1060px;bottom:180px">Alt + K</div>
+
+  <!-- THE REAL OVERLAY (glass-card, exact replica of App.tsx + index.css) -->
+  <div class="glass-card" id="s3-ov" style="left:1100px;top:120px">
+    <!-- Header -->
+    <div class="ov-header">
+      <div class="ov-title-row">
+        <span class="ov-sparkle">✦</span>
+        <span class="ov-name">SnapText</span>
+        <span class="ov-gear">⚙</span>
+      </div>
+      <div class="ov-right-row">
+        <span class="ov-badge app-ctx">✉ Email</span>
+        <span class="ov-badge lang">MIXED</span>
+        <div class="ov-history-btn">🕐</div>
+        <span class="ov-usage">4/20</span>
+        <span class="ov-aimode">🛡️ Worker</span>
+      </div>
+    </div>
+    <!-- Captured text preview -->
+    <div class="text-preview">"mail karna hai John ko, project delay ho gaya, 2 din aur…"</div>
+    <!-- ToneMirror -->
+    <div class="tone-mirror">
+      <div class="tone-row">
+        <span class="tone-dot" style="background:#a78bfa"></span>
+        <span class="tone-text" style="color:#a78bfa">Hinglish / mixed language detected</span>
+      </div>
+      <span class="tone-sub" style="color:#a78bfa">Translate mode suggested</span>
+    </div>
+    <!-- Mode pills — Do is active (NLP detected instruction) -->
+    <div class="mode-pills-row">
+      <button class="mode-pill-btn nlp-hint" style="opacity:.55">Reply</button>
+      <button class="mode-pill-btn active">✦ Do</button>
+      <button class="mode-pill-btn" style="opacity:.55">Correct</button>
+      <button class="mode-pill-btn" style="opacity:.55">Prompt</button>
+      <button class="mode-pill-btn mode-pill-more">···</button>
+    </div>
+    <!-- Token container -->
+    <div class="token-container token-generating" id="s3-tokens">Generating…</div>
+    <!-- Actions -->
+    <div class="ov-actions">
+      <button class="ov-transform-btn" style="opacity:.4;background:rgba(255,255,255,.05);box-shadow:none">
+        <span style="font-size:13px">➤</span> Transform
+      </button>
+      <button class="ov-icon-btn" id="s3-insert-btn" title="Insert (Tab)">✓</button>
+      <button class="ov-icon-btn" title="Copy (C)">⧉</button>
+    </div>
+    <!-- Shortcut hints -->
+    <div class="shortcut-hints">
+      <span>Ctrl+C×2 Pill</span>
+      <span>Alt+K Overlay</span>
+      <span>Alt+⇧+K Prompt</span>
+      <span>Tab Insert</span>
+    </div>
+  </div>
+
+  <div class="inj-flash" id="s3-flash"></div>
+  <div class="tbar"><div class="tb-s">⊞</div><div class="tb-app on">📧</div><div class="tb-app">🌐</div><div class="tb-app">🖥</div><div class="tb-r"><div class="snap-tray"><div class="snap-ico">S</div><div class="snap-dot"></div><span>SnapText</span></div><span>11:44 AM</span></div></div>
+</div>
+
+<!-- ══════════════ SCENE 4: VSCODE → CTRL+C×2 → PILL → PROMPT ══════════════ -->
+<div class="scene" id="sc4">
+  <div class="desk"><div class="desk-grid"></div></div>
+  <div class="win vsc-win">
+    <div class="wbar"><div class="wd r"></div><div class="wd y"></div><div class="wd g"></div><div class="wtitle">api_handler.py — Visual Studio Code</div></div>
+    <div class="wbody">
+      <div class="vsc-layout">
+        <div class="vsc-activity">
+          <div class="vsc-act-ico on">📁</div><div class="vsc-act-ico">🔍</div><div class="vsc-act-ico">🐛</div>
+        </div>
+        <div class="vsc-exp">
+          <div class="vsc-exp-hd">Explorer</div>
+          <div class="vsc-file" style="color:rgba(255,255,255,.3);padding-left:16px">📁 snaptext-api</div>
+          <div class="vsc-file" style="padding-left:32px">📄 main.py</div>
+          <div class="vsc-file on" style="padding-left:32px">🐍 api_handler.py</div>
+          <div class="vsc-file" style="padding-left:32px">📄 models.py</div>
+        </div>
+        <div class="vsc-editor-area">
+          <div class="vsc-tabs">
+            <div class="vsc-tab on"><span style="color:#86efac">🐍</span>api_handler.py</div>
+            <div class="vsc-tab">📄 main.py</div>
+          </div>
+          <div class="vsc-code-area">
+            <div class="vsc-gutter">
+              <div class="ln">1</div><div class="ln">2</div><div class="ln">3</div><div class="ln">4</div><div class="ln">5</div><div class="ln">6</div><div class="ln">7</div><div class="ln">8</div><div class="ln">9</div><div class="ln">10</div><div class="ln">11</div><div class="ln">12</div><div class="ln">13</div>
+              <div class="ln e">14</div><div class="ln e">15</div><div class="ln e">16</div><div class="ln e">17</div><div class="ln e">18</div><div class="ln e">19</div>
+              <div class="ln">20</div><div class="ln">21</div>
+            </div>
+            <div class="vsc-code-content">
+              <div><span class="ck">import</span> requests, json</div>
+              <div><span class="ck">from</span> typing <span class="ck">import</span> Optional, Dict</div>
+              <div>&nbsp;</div>
+              <div><span class="ck">def</span> <span class="cf">fetch_user</span>(user_id: <span class="cn">str</span>) → Optional[Dict]:</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;resp = requests.<span class="cf">get</span>(<span class="cs">f"https://api.example.com/users/{'{'}user_id{'}'}"</span>)</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="ck">return</span> resp.json().<span class="cf">get</span>(<span class="cs">'data'</span>)</div>
+              <div>&nbsp;</div>
+              <div><span class="ck">def</span> <span class="cf">process_order</span>(order_id: <span class="cn">str</span>):</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;user = <span class="cf">fetch_user</span>(order_id)</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;prefs = user.<span class="cf">get</span>(<span class="cs">'preferences'</span>) &nbsp;<span class="cc"># ← crashes here</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="ck">print</span>(prefs[<span class="cs">'theme'</span>])</div>
+              <div>&nbsp;</div>
+              <div><span class="cc"># Terminal:</span></div>
+              <div class="sel-block"><span class="ce">Traceback (most recent call last):</span></div>
+              <div class="sel-block">&nbsp;&nbsp;File <span class="cs">"main.py"</span>, line 31, in &lt;module&gt;</div>
+              <div class="sel-block">&nbsp;&nbsp;&nbsp;&nbsp;<span class="cf">process_order</span>(<span class="cs">"ord_8842"</span>)</div>
+              <div class="sel-block">&nbsp;&nbsp;File <span class="cs">"api_handler.py"</span>, line 9</div>
+              <div class="sel-block">&nbsp;&nbsp;&nbsp;&nbsp;prefs = user.<span class="cf">get</span>(<span class="cs">'preferences'</span>)</div>
+              <div class="sel-block"><span class="ce">AttributeError: 'NoneType' object has no attribute 'get'</span></div>
+              <div>&nbsp;</div>
+              <div><span class="cc"># user is None — API returned 404 for ord_8842</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTRL+C BADGE -->
+  <div class="ctrlc-badge" id="s4-kbd" style="left:900px;bottom:170px">Ctrl+C  ×2</div>
+
+  <!-- REAL PILL -->
+  <div class="snap-pill-widget" id="s4-pill" style="left:900px;top:700px">
+    <button class="pill-btn accent">Reply</button>
+    <button class="pill-btn accent">Do</button>
+    <button class="pill-btn">Fix</button>
+    <button class="pill-btn" id="s4-prompt-btn">Prompt</button>
+    <div class="pill-divider-line"></div>
+    <button class="pill-dismiss">×</button>
+  </div>
+
+  <!-- LOADER TOAST -->
+  <div class="loader-toast-widget" id="s4-toast" style="left:900px;top:700px">
+    <div class="loader-dot" id="s4-dot"></div>
+    <span id="s4-toast-txt">Generating…</span>
+  </div>
+
+  <!-- RESULT: the glass-card overlay showing the generated prompt (appears after silent generation) -->
+  <div class="glass-card" id="s4-result" style="left:1120px;top:100px">
+    <div class="ov-header">
+      <div class="ov-title-row">
+        <span class="ov-sparkle">✦</span>
+        <span class="ov-name">SnapText</span>
+        <span class="ov-gear">⚙</span>
+      </div>
+      <div class="ov-right-row">
+        <span class="ov-badge app-ctx">⌨ IDE</span>
+        <span class="ov-badge lang" style="background:rgba(192,132,252,.14);border-color:rgba(192,132,252,.3);color:#c084fc">Prompt</span>
+        <span class="ov-usage">7/20</span>
+        <span class="ov-aimode">🛡️ Worker</span>
+      </div>
+    </div>
+    <div class="text-preview">"AttributeError: 'NoneType' object has no attribute 'get'"</div>
+    <div class="tone-mirror" style="margin-bottom:10px">
+      <div class="tone-row">
+        <span class="tone-dot" style="background:#3b82f6"></span>
+        <span class="tone-text" style="color:#3b82f6">Error traceback detected · Debug prompt ready</span>
+      </div>
+    </div>
+    <div class="mode-pills-row">
+      <button class="mode-pill-btn" style="opacity:.55">Reply</button>
+      <button class="mode-pill-btn" style="opacity:.55">Do</button>
+      <button class="mode-pill-btn" style="opacity:.55">Correct</button>
+      <button class="mode-pill-btn active">Prompt</button>
+      <button class="mode-pill-btn mode-pill-more">···</button>
+    </div>
+    <div class="token-container" id="s4-tokens" style="font-size:12px;max-height:300px"></div>
+    <div class="ov-actions">
+      <button class="ov-transform-btn" style="opacity:.4;background:rgba(255,255,255,.05);box-shadow:none"><span>➤</span> Transform</button>
+      <button class="ov-icon-btn" id="s4-copy-btn">⧉</button>
+      <button class="ov-icon-btn">✓</button>
+    </div>
+    <div class="shortcut-hints">
+      <span>Ctrl+C×2 Pill</span><span>Alt+K Overlay</span><span>Alt+⇧+K Prompt</span><span>Tab Insert</span>
+    </div>
+  </div>
+
+  <div class="tbar"><div class="tb-s">⊞</div><div class="tb-app">📧</div><div class="tb-app">🌐</div><div class="tb-app on">🖥</div><div class="tb-r"><div class="snap-tray"><div class="snap-ico">S</div><div class="snap-dot"></div><span>SnapText</span></div><span>11:47 AM</span></div></div>
+</div>
+
+<!-- ══════════════ SCENE 5: SAFETY + LEARNING ══════════════ -->
+<div class="scene" id="sc5">
+  <div class="s5-wrap">
+    <div class="s5-card s5c1">
+      <div class="s5-ic">🔒</div>
+      <div class="s5-tt">Stays on your device</div>
+      <div class="s5-ds">All history, voice profiles, and contact memory live in a local SQLite database. Nothing leaves your machine.</div>
+      <div class="s5-tgs"><div class="s5-tg">Local SQLite</div><div class="s5-tg">No cloud sync</div><div class="s5-tg">Incognito mode</div><div class="s5-tg">Sensitive data blocked</div></div>
+    </div>
+    <div class="s5-card s5c2">
+      <div class="s5-ic">🧠</div>
+      <div class="s5-tt">Learns your voice</div>
+      <div class="s5-ds">Tracks tone, formality, Hinglish patterns, and per-contact style. Remembers how you write to each person.</div>
+      <div class="s5-tgs"><div class="s5-tg">Voice profile</div><div class="s5-tg">Contact memory</div><div class="s5-tg">18-script detection</div><div class="s5-tg">Semantic RAG</div></div>
+    </div>
+    <div class="s5-card s5c3">
+      <div class="s5-ic">⚡</div>
+      <div class="s5-tt">Works in every app</div>
+      <div class="s5-ds">Gmail, WhatsApp, Slack, VS Code, Notion, Outlook — any Windows app. Ctrl+C×2 anywhere, pill floats up.</div>
+      <div class="s5-tgs"><div class="s5-tg">Gmail</div><div class="s5-tg">WhatsApp Web</div><div class="s5-tg">VS Code</div><div class="s5-tg">Slack</div><div class="s5-tg">Notion</div><div class="s5-tg">Any Windows app</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SCENE 6: CTA ══════════════ -->
+<div class="scene" id="sc6">
+  <div class="cta-bloom"></div>
+  <div class="cta-l l1">Write faster.</div>
+  <div class="cta-l l2">Think bigger.</div>
+  <div class="cta-brand">
+    <div class="cta-ico">✦</div>
+    <div class="cta-nm">SNAPTEXT</div>
+    <div class="cta-url">snaptext.app · Free to start</div>
+  </div>
+</div>
+
+<script>
+const delay = ms => new Promise(r => setTimeout(r, ms));
+const $ = id => document.getElementById(id);
+function showScene(id){ $(id).classList.add('on') }
+function hideScene(id){ $(id).classList.remove('on') }
+
+// SCENE TIMELINE
+const TL = [
+  {id:'sc1', show:0,     hide:14500},
+  {id:'sc2', show:13800, hide:25500},
+  {id:'sc3', show:24800, hide:34000},
+  {id:'sc4', show:33300, hide:52000},
+  {id:'sc5', show:51300, hide:58500},
+  {id:'sc6', show:57800, hide:68000},
+];
+TL.forEach(s=>{
+  setTimeout(()=>showScene(s.id), s.show);
+  setTimeout(()=>hideScene(s.id), s.hide);
+});
+
+// TYPE TEXT
+async function type(el, txt, spd=28){
+  el.textContent='';
+  for(let i=0;i<txt.length;i++){ el.textContent=txt.slice(0,i+1); await delay(spd); }
+}
+
+// ══ SCENE 1: user starts typing manually → stops → uses SnapText pill ══
+(async()=>{
+  const el=$('s1-typed');
+  // Start typing slowly — the "manual struggle"
+  await delay(600);
+  await type(el,'Hi Rohan, regarding the client follow-up, I wanted to',30);
+  // Pause — user hesitates
+  await delay(800);
+  // Clear the typed text (user deletes it and uses SnapText instead)
+  for(let i=el.textContent.length;i>=0;i--){ el.textContent=el.textContent.slice(0,i); await delay(8); }
+  await delay(400);
+
+  // Ctrl+C×2 badge flashes
+  const kbd=$('s1-kbd');
+  kbd.classList.add('show');
+  await delay(500);
+  kbd.classList.remove('show');
+  await delay(200);
+  kbd.classList.add('show');
+  await delay(600);
+  kbd.classList.remove('show');
+  await delay(250);
+
+  // Pill appears
+  const pill=$('s1-pill');
+  pill.classList.add('show');
+  await delay(700);
+
+  // Reply pulses
+  const rb=$('s1-reply-btn');
+  rb.classList.add('pulsing');
+  await delay(900);
+  rb.classList.remove('pulsing');
+
+  // Click
+  rb.classList.add('clicked');
+  await delay(100);
+  rb.classList.remove('clicked');
+
+  // Pill hides silently
+  pill.classList.remove('show');
+  pill.classList.add('hide');
+  await delay(120);
+
+  // Toast: Generating…
+  const toast=$('s1-toast');
+  toast.classList.add('show');
+  await delay(1800);
+
+  // Done
+  $('s1-dot').classList.add('done');
+  $('s1-toast-txt').textContent='Done · Ctrl+Z to undo';
+  toast.classList.add('done');
+  await delay(400);
+
+  // Input fills with AI reply
+  $('s1-cursor').style.display='none';
+  await type(el,'Sure Rohan! I\'ll send the client a professional follow-up on the timeline today. Will keep the tone warm and concise 👍', 18);
+})();
+
+// ══ SCENE 2: WhatsApp → Ctrl+C×2 → PILL → REPLY (silent) ══
+(async()=>{
+  await delay(13900);
+
+  // 1. Highlight the target message
+  const msg=$('s2-msg');
+  msg.style.outline='2.5px solid rgba(59,130,246,.6)';
+  msg.style.outlineOffset='3px';
+  msg.style.borderRadius='15px';
+  await delay(700);
+
+  // 2. Ctrl+C×2 badge flashes (twice, like real double-copy)
+  const kbd=$('s2-kbd');
+  kbd.classList.add('show');
+  await delay(500);
+  kbd.classList.remove('show');
+  await delay(200);
+  kbd.classList.add('show');
+  await delay(700);
+  kbd.classList.remove('show');
+  await delay(300);
+
+  // 3. PILL pops up right under the message
+  const pill=$('s2-pill');
+  pill.classList.add('show');
+  await delay(900);
+
+  // 4. Reply button pulses to draw attention
+  const rb=$('s2-reply');
+  rb.classList.add('pulsing');
+  await delay(1200);
+  rb.classList.remove('pulsing');
+
+  // 5. Click effect on Reply
+  rb.classList.add('clicked');
+  await delay(120);
+  rb.classList.remove('clicked');
+  await delay(80);
+
+  // 6. Pill disappears — SILENT mode, no overlay
+  pill.classList.remove('show');
+  pill.classList.add('hide');
+  await delay(150);
+
+  // 7. Loader toast appears at same spot: "Generating…" with blue dot
+  const toast=$('s2-toast');
+  toast.classList.add('show');
+  await delay(2800); // simulate AI generation time
+
+  // 8. Toast updates to "Done"
+  $('s2-dot').classList.add('done');
+  $('s2-toast-txt').textContent='Done · Ctrl+Z to undo';
+  toast.classList.add('done');
+  await delay(500);
+
+  // 9. Flash inject
+  const flash=$('s2-flash');
+  flash.classList.add('go');
+  await delay(100);
+
+  // 10. WhatsApp input fills with the Hinglish reply
+  const inp=$('s2-input');
+  inp.textContent='bhai 10 min mein aa raha hoon 🏃, bata dena unhe — nikal pada hoon abhi 🙏';
+  inp.classList.add('filled');
+
+  // 11. Toast fades after a moment
+  await delay(1500);
+  toast.style.opacity='0';
+  toast.style.transition='opacity .5s ease';
+})();
+
+// ══ SCENE 3: Outlook → Alt+K → REAL OVERLAY → Do → Insert ══
+(async()=>{
+  await delay(24900);
+
+  // 1. Notes text is already selected (has .sel class from HTML)
+  await delay(700);
+
+  // 2. Alt+K badge
+  const kbd=$('s3-kbd');
+  kbd.classList.add('show');
+  await delay(800);
+  kbd.classList.remove('show');
+  await delay(300);
+
+  // 3. The glass-card overlay appears
+  const ov=$('s3-ov');
+  ov.classList.add('show');
+
+  // 4. Stream email into token container
+  const tokens=$('s3-tokens');
+  tokens.classList.add('token-generating');
+  tokens.textContent='';
+  await delay(1200); // brief "thinking" pause
+
+  const emailTxt='Dear John,\n\nI hope you\'re doing well. I wanted to give you a quick update on our project timeline.\n\nWe\'ve hit a short delay in the final integration phase. Our team needs two additional days to ensure everything meets our quality bar. We\'re on track to deliver by Thursday EOD.\n\nThank you for your understanding — I\'ll keep you posted.\n\nBest regards';
+  await type(tokens, emailTxt, 16);
+  tokens.classList.remove('token-generating');
+
+  // 5. Insert button becomes active/prominent
+  const insertBtn=$('s3-insert-btn');
+  insertBtn.style.background='rgba(59,130,246,.15)';
+  insertBtn.style.borderColor='rgba(59,130,246,.35)';
+  insertBtn.style.color='#60a5fa';
+  await delay(700);
+
+  // 6. Click insert
+  insertBtn.style.transform='scale(.93)';
+  await delay(120);
+  insertBtn.style.transform='scale(1)';
+  await delay(200);
+
+  // 7. Overlay fades out
+  ov.classList.remove('show');
+  ov.classList.add('hide');
+  await delay(200);
+
+  // 8. Flash
+  $('s3-flash').classList.add('go');
+
+  // 9. Replace notes with the injected email in the compose body
+  const body=$('s3-body');
+  body.innerHTML=`<div class="ol-injected">Dear John,<br><br>I hope you're doing well. I wanted to give you a quick update on our project timeline.<br><br>We've hit a short delay in the final integration phase. Our team needs <strong style="color:rgba(255,255,255,.9)">two additional days</strong> to ensure everything meets our quality bar. We're on track to deliver by <strong style="color:rgba(255,255,255,.9)">Thursday EOD</strong>.<br><br>Thank you for your understanding — I'll keep you posted.<br><br>Best regards,<br><span style="color:rgba(255,255,255,.4)">— via SnapText ✦</span></div>`;
+})();
+
+// ══ SCENE 4: VS Code → Ctrl+C×2 → PILL → PROMPT (silent) → shows result overlay ══
+(async()=>{
+  await delay(33400);
+  await delay(800);
+
+  // 1. The error lines are already highlighted with sel-block (blue bg from CSS)
+  await delay(400);
+
+  // 2. Ctrl+C×2
+  const kbd=$('s4-kbd');
+  kbd.classList.add('show');
+  await delay(500);
+  kbd.classList.remove('show');
+  await delay(200);
+  kbd.classList.add('show');
+  await delay(700);
+  kbd.classList.remove('show');
+  await delay(300);
+
+  // 3. PILL pops up
+  const pill=$('s4-pill');
+  pill.classList.add('show');
+  await delay(900);
+
+  // 4. Prompt button pulses
+  const pb=$('s4-prompt-btn');
+  pb.style.background='rgba(168,85,247,.2)';
+  pb.style.color='#c084fc';
+  pb.style.borderColor='rgba(168,85,247,.3)';
+  await delay(1000);
+
+  // 5. Click
+  pb.style.transform='scale(.96)';
+  await delay(120);
+  pb.style.transform='scale(1)';
+  await delay(80);
+
+  // 6. Pill disappears — silent
+  pill.classList.remove('show');
+  pill.classList.add('hide');
+  await delay(150);
+
+  // 7. Loader toast: Generating…
+  const toast=$('s4-toast');
+  toast.classList.add('show');
+  await delay(2800);
+
+  // 8. Done
+  $('s4-dot').classList.add('done');
+  $('s4-toast-txt').textContent='Done · Ctrl+Z to undo';
+  toast.classList.add('done');
+  await delay(600);
+  toast.style.opacity='0';
+  toast.style.transition='opacity .4s ease';
+  await delay(300);
+
+  // 9. Result glass-card overlay appears showing the structured prompt
+  const result=$('s4-result');
+  result.classList.add('show');
+
+  // 10. Stream the prompt into it
+  const tokens=$('s4-tokens');
+  const promptLines=[
+    {label:'**Error:**',     val:"AttributeError: 'NoneType' object has no attribute 'get'", color:'#f87171'},
+    {label:'**Likely Cause:**', val:'1. fetch_user() returns None on API 404\n2. No null-check before calling .get()\n3. order_id may not map to a valid user_id', color:'#c084fc'},
+    {label:'**Context:**',   val:'API endpoint URL, HTTP status for "ord_8842",\nwhether order_id and user_id are the same entity', color:'#60a5fa'},
+    {label:'**Ask:**',       val:'How should I safely handle None from fetch_user() and distinguish a missing user from an API failure?', color:'#86efac'},
+  ];
+  for(const ln of promptLines){
+    const lbl=document.createElement('div');
+    lbl.style.cssText=`color:${ln.color};font-weight:700;margin-bottom:3px;margin-top:${tokens.children.length?'12px':'0'}`;
+    lbl.textContent=ln.label;
+    tokens.appendChild(lbl);
+    const val=document.createElement('div');
+    val.style.cssText='color:#d4d8e2;font-size:11.5px;line-height:1.65;white-space:pre-wrap';
+    tokens.appendChild(val);
+    await type(val, ln.val, 13);
+  }
+
+  // 11. Copy button lights up
+  await delay(600);
+  const copyBtn=$('s4-copy-btn');
+  copyBtn.style.background='rgba(57,217,138,.12)';
+  copyBtn.style.borderColor='rgba(57,217,138,.3)';
+  copyBtn.style.color='#4ade80';
+  copyBtn.textContent='✓ Copied';
+})();
+</script>
+</body>
+</html>

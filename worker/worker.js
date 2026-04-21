@@ -1,48 +1,172 @@
+const CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "tauri://localhost",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Device-ID, X-App-Secret",
+};
+
+// ── D1 schema (run once via wrangler d1 execute) ─────────────────────────────
+// CREATE TABLE IF NOT EXISTS usage (
+//   device_id TEXT NOT NULL,
+//   date TEXT NOT NULL,
+//   count INTEGER DEFAULT 0,
+//   PRIMARY KEY (device_id, date)
+// );
+// CREATE TABLE IF NOT EXISTS events (
+//   id INTEGER PRIMARY KEY AUTOINCREMENT,
+//   device_id TEXT NOT NULL,
+//   event TEXT NOT NULL,
+//   mode TEXT,
+//   app_context TEXT,
+//   ts TEXT NOT NULL
+// );
+
+async function getUsageD1(db, deviceId, date) {
+    const row = await db.prepare(
+        "SELECT count FROM usage WHERE device_id = ? AND date = ?"
+    ).bind(deviceId, date).first();
+    return row ? row.count : 0;
+}
+
+async function incrementUsageD1(db, deviceId, date) {
+    await db.prepare(
+        "INSERT INTO usage (device_id, date, count) VALUES (?, ?, 1) " +
+        "ON CONFLICT(device_id, date) DO UPDATE SET count = count + 1"
+    ).bind(deviceId, date).run();
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
-        const deviceId = request.headers.get("X-Device-ID") || "unknown";
-        const date = new Date().toISOString().split("T")[0];
-        const usageKey = `usage:${deviceId}:${date}`;
 
-        // ── GET /usage ──────────────────────────────────────────────────────
-        if (url.pathname === "/usage" || (request.method === "GET" && url.pathname.endsWith("/usage"))) {
-            const used = parseInt(await env.USAGE.get(usageKey) || "0");
-            return new Response(JSON.stringify({ used, cap: 20 }), {
-                headers: { "Content-Type": "application/json" }
+        // ── CORS preflight ──────────────────────────────────────────────────
+        if (request.method === "OPTIONS") {
+            return new Response(null, { status: 204, headers: CORS_HEADERS });
+        }
+
+        // ── Auth ────────────────────────────────────────────────────────────
+        const clientSecret = request.headers.get("X-App-Secret") || "";
+        if (env.APP_SECRET && clientSecret !== env.APP_SECRET) {
+            return new Response(JSON.stringify({ error: "Unauthorized" }), {
+                status: 401,
+                headers: { "Content-Type": "application/json", ...CORS_HEADERS }
             });
         }
 
-        // ── POST /generate ──────────────────────────────────────────────────
-        if (request.method === "POST") {
-            const body = await request.json();
-            const { system_prompt, user_text, stream, model: reqModel } = body;
+        const deviceId = request.headers.get("X-Device-ID") || "unknown";
+        const date = new Date().toISOString().split("T")[0];
 
-            // 1. Check daily device cap
-            const used = parseInt(await env.USAGE.get(usageKey) || "0");
-            if (used >= 20) {
-                return new Response(JSON.stringify({ error: "Daily limit reached (20/20). Resets at midnight." }), { status: 429 });
+        // ── GET /usage ──────────────────────────────────────────────────────
+        if (url.pathname === "/usage" || (request.method === "GET" && url.pathname.endsWith("/usage"))) {
+            let used = 0;
+            if (env.DB) {
+                used = await getUsageD1(env.DB, deviceId, date);
+            } else {
+                used = parseInt(await env.USAGE.get(`usage:${deviceId}:${date}`) || "0");
+            }
+            return new Response(JSON.stringify({ used, cap: 20 }), {
+                headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+            });
+        }
+
+        // ── POST /telemetry ─────────────────────────────────────────────────
+        // Receives anonymous usage events — no text content, only mode + context
+        if (url.pathname === "/telemetry" && request.method === "POST") {
+            if (!env.DB) {
+                return new Response(JSON.stringify({ ok: true }), {
+                    headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+                });
+            }
+            let body = {};
+            try { body = await request.json(); } catch (_) {}
+            const event      = (body.event      || "unknown").slice(0, 32);
+            const mode       = (body.mode       || "").slice(0, 32);
+            const appContext = (body.app_context || "").slice(0, 64);
+            const ts         = new Date().toISOString();
+            await env.DB.prepare(
+                "INSERT INTO events (device_id, event, mode, app_context, ts) VALUES (?, ?, ?, ?, ?)"
+            ).bind(deviceId, event, mode, appContext, ts).run();
+            return new Response(JSON.stringify({ ok: true }), {
+                headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+            });
+        }
+
+        // ── GET /analytics ──────────────────────────────────────────────────
+        // Aggregate stats — mode distribution, active devices, top app contexts
+        if (url.pathname === "/analytics" && request.method === "GET") {
+            if (!env.DB) {
+                return new Response(JSON.stringify({ error: "D1 not configured" }), {
+                    status: 503, headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+                });
+            }
+            const [modeRows, dauRows, contextRows] = await Promise.all([
+                env.DB.prepare(
+                    "SELECT mode, COUNT(*) as cnt FROM events WHERE event='transform' AND ts >= date('now','-7 days') GROUP BY mode ORDER BY cnt DESC"
+                ).all(),
+                env.DB.prepare(
+                    "SELECT COUNT(DISTINCT device_id) as dau FROM usage WHERE date >= date('now','-7 days')"
+                ).first(),
+                env.DB.prepare(
+                    "SELECT app_context, COUNT(*) as cnt FROM events WHERE event='transform' AND ts >= date('now','-7 days') GROUP BY app_context ORDER BY cnt DESC LIMIT 5"
+                ).all(),
+            ]);
+            return new Response(JSON.stringify({
+                period: "7d",
+                dau: dauRows ? dauRows.dau : 0,
+                mode_distribution: modeRows.results,
+                top_contexts: contextRows.results,
+            }), { headers: { "Content-Type": "application/json", ...CORS_HEADERS } });
+        }
+
+        // ── POST /generate ──────────────────────────────────────────────────
+        if (request.method === "POST" && url.pathname !== "/embed" && url.pathname !== "/telemetry") {
+            const ct = request.headers.get("content-type") || "";
+            if (!ct.includes("application/json")) {
+                return new Response(JSON.stringify({ error: "Bad Request" }), {
+                    status: 400, headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+                });
+            }
+            const contentLength = parseInt(request.headers.get("content-length") || "0");
+            if (contentLength > 10240) {
+                return new Response(JSON.stringify({ error: "Payload too large" }), {
+                    status: 413, headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+                });
             }
 
-            // 2. Resolve keys
+            const body = await request.json();
+            const { system_prompt, user_text, stream, model: reqModel, max_tokens, temperature, thinking_budget } = body;
+
+            // Check daily cap (D1 preferred, KV fallback)
+            let used = 0;
+            if (env.DB) {
+                used = await getUsageD1(env.DB, deviceId, date);
+            } else {
+                used = parseInt(await env.USAGE.get(`usage:${deviceId}:${date}`) || "0");
+            }
+            if (used >= 20) {
+                return new Response(JSON.stringify({ error: "Daily limit reached (20/20). Resets at midnight." }), {
+                    status: 429, headers: CORS_HEADERS
+                });
+            }
+
             const availableKeys = [env.GEMINI_KEY_1, env.GEMINI_KEY_2, env.GEMINI_KEY_3].filter(Boolean);
             if (availableKeys.length === 0) return new Response("No API keys configured", { status: 500 });
-
-            // 3. Shuffle keys for true rotation
             const shuffledKeys = availableKeys.sort(() => Math.random() - 0.5);
 
-            const model = reqModel || env.MODEL || "gemini-2.0-flash";
+            const model = reqModel || env.MODEL || "gemini-2.5-flash";
+            const resolvedBudget = typeof thinking_budget === "number" ? thinking_budget : 0;
             const geminiBody = {
-                contents: [{ parts: [{ text: `${system_prompt}\n\n${user_text}` }] }],
-                generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+                systemInstruction: { parts: [{ text: system_prompt || "" }] },
+                contents: [{ role: "user", parts: [{ text: user_text }] }],
+                generationConfig: {
+                    temperature: typeof temperature === "number" ? temperature : 0.5,
+                    maxOutputTokens: typeof max_tokens === "number" && max_tokens > 0 ? Math.min(max_tokens, 8192) : 800,
+                    thinkingConfig: { thinkingBudget: resolvedBudget }
+                }
             };
 
-            // 4. Retry Loop (Failover)
-            // If one key hits 429, try the next one immediately.
             let lastError = null;
             for (const key of shuffledKeys) {
                 const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${stream ? "streamGenerateContent" : "generateContent"}?key=${key}${stream ? "&alt=sse" : ""}`;
-
                 const res = await fetch(geminiUrl, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -50,33 +174,58 @@ export default {
                 });
 
                 if (res.ok) {
-                    // Success! Increment usage and return
-                    await env.USAGE.put(usageKey, (used + 1).toString(), { expirationTtl: 86400 });
-                    return new Response(res.body, { headers: res.headers });
+                    // Increment usage counter
+                    if (env.DB) {
+                        await incrementUsageD1(env.DB, deviceId, date);
+                    } else {
+                        await env.USAGE.put(`usage:${deviceId}:${date}`, (used + 1).toString(), { expirationTtl: 86400 });
+                    }
+                    const merged = new Headers(res.headers);
+                    for (const [k, v] of Object.entries(CORS_HEADERS)) merged.set(k, v);
+                    return new Response(res.body, { status: res.status, headers: merged });
                 }
 
                 const errStatus = res.status;
                 const errText = await res.text();
                 lastError = { status: errStatus, body: errText };
-
-                // If it's a 429 (Rate Limit / Quota), try the next key
                 if (errStatus === 429) {
                     console.log(`Key ${key.substring(0, 6)}... rate limited. Retrying...`);
                     continue;
                 }
-
-                // If it's some other non-retryable error (e.g. 400 Bad Request), break and show it
                 break;
             }
 
-            // If we're here, all retries failed or we hit a non-retryable error
             const displayError = lastError
                 ? `Gemini error ${lastError.status}: ${lastError.body}`
                 : "All keys exhausted or rate limited.";
-
-            return new Response(JSON.stringify({ error: displayError }), { status: 503 });
+            return new Response(JSON.stringify({ error: displayError }), {
+                status: 503, headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+            });
         }
 
-        return new Response("Not Found", { status: 404 });
+        // ── POST /embed ─────────────────────────────────────────────────────
+        if (url.pathname === "/embed" && request.method === "POST") {
+            const body = await request.json();
+            const { text } = body;
+            if (!text || typeof text !== "string" || text.length > 5000) {
+                return new Response(JSON.stringify({ error: "Bad Request" }), {
+                    status: 400, headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+                });
+            }
+            const availableKeys = [env.GEMINI_KEY_1, env.GEMINI_KEY_2, env.GEMINI_KEY_3].filter(Boolean);
+            if (availableKeys.length === 0) return new Response("No API keys", { status: 500, headers: CORS_HEADERS });
+            const key = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+            const embedUrl = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`;
+            const res = await fetch(embedUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "models/text-embedding-004", content: { parts: [{ text }] } })
+            });
+            const merged = new Headers(res.headers);
+            for (const [k, v] of Object.entries(CORS_HEADERS)) merged.set(k, v);
+            return new Response(res.body, { status: res.status, headers: merged });
+        }
+
+        return new Response("Not Found", { status: 404, headers: CORS_HEADERS });
     }
 };

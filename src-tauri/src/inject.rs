@@ -4,13 +4,19 @@ use std::time::Duration;
 use arboard::Clipboard;
 
 pub fn inject_text(text: String) {
-    let mut clipboard = Clipboard::new().unwrap();
-    
+    let mut clipboard = match Clipboard::new() {
+        Ok(c) => c,
+        Err(e) => { eprintln!("Clipboard init failed: {}", e); return; }
+    };
+
     // 1. Write to clipboard
     let _ = clipboard.set_text(text);
-    
+
     // 2. Simulate Ctrl+V after enough delay for window to hide
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = match Enigo::new(&Settings::default()) {
+        Ok(e) => e,
+        Err(e) => { eprintln!("Enigo init failed: {}", e); return; }
+    };
     sleep(Duration::from_millis(300)); // Increased for safety
     
     #[cfg(target_os = "windows")]

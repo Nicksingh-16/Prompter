@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SnapText — LinkedIn Promo Storyboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,700;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #06070d;
+    --surface: #0d0f1a;
+    --surface2: #131624;
+    --border: rgba(255,255,255,0.07);
+    --border-bright: rgba(0,210,255,0.25);
+    --cyan: #00d4ff;
+    --cyan-dim: rgba(0,212,255,0.15);
+    --amber: #ffb347;
+    --amber-dim: rgba(255,179,71,0.12);
+    --green: #39d98a;
+    --red: #ff4d6d;
+    --text: #e8eaf0;
+    --text-muted: #5a6070;
+    --text-dim: #8a94a8;
+    --mono: 'JetBrains Mono', monospace;
+    --serif: 'Fraunces', serif;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.4;
+  }
+
+  /* Ambient glow orbs */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .orb-1 { width: 600px; height: 600px; background: radial-gradient(circle, rgba(0,212,255,0.06) 0%, transparent 70%); top: -200px; left: -100px; }
+  .orb-2 { width: 500px; height: 500px; background: radial-gradient(circle, rgba(255,179,71,0.05) 0%, transparent 70%); bottom: 200px; right: -150px; }
+  .orb-3 { width: 400px; height: 400px; background: radial-gradient(circle, rgba(57,217,138,0.04) 0%, transparent 70%); top: 60%; left: 40%; }
+
+  /* Layout */
+  .container { max-width: 1280px; margin: 0 auto; padding: 0 40px; position: relative; z-index: 1; }
+
+  /* ============ HEADER ============ */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 20px 0;
+    position: sticky;
+    top: 0;
+    background: rgba(6,7,13,0.85);
+    backdrop-filter: blur(20px);
+    z-index: 100;
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo-mark {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--cyan), rgba(0,212,255,0.3));
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--bg);
+    box-shadow: 0 0 20px rgba(0,212,255,0.3);
+  }
+  .logo-text {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.5px;
+  }
+  .logo-text span { color: var(--text-muted); font-weight: 400; }
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .badge-linkedin { background: rgba(0,119,181,0.2); color: #4fa8d5; border: 1px solid rgba(0,119,181,0.3); }
+  .badge-duration { background: var(--cyan-dim); color: var(--cyan); border: 1px solid var(--border-bright); }
+  .badge-version { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(255,179,71,0.25); }
+
+  /* ============ HERO ============ */
+  .hero {
+    padding: 80px 0 60px;
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 60px;
+    align-items: start;
+  }
+  .hero-eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--cyan);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .hero-eyebrow::before {
+    content: '';
+    width: 30px;
+    height: 1px;
+    background: var(--cyan);
+  }
+  .hero-title {
+    font-family: var(--serif);
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -1px;
+    margin-bottom: 16px;
+  }
+  .hero-title .highlight {
+    font-style: italic;
+    font-weight: 200;
+    color: var(--cyan);
+  }
+  .hero-subtitle {
+    font-size: 16px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    max-width: 480px;
+    margin-bottom: 32px;
+    font-weight: 300;
+  }
+  .hero-stats {
+    display: flex;
+    gap: 32px;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Mini video preview */
+  .video-preview-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+  }
+  .vp-screen {
+    aspect-ratio: 16/9;
+    background: #000;
+    position: relative;
+    overflow: hidden;
+  }
+  .vp-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, #0a0e1a 0%, #050810 50%, #0d1220 100%);
+  }
+  .vp-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
+    background-size: 30px 30px;
+  }
+  .vp-logo {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .vp-logo-icon {
+    width: 48px; height: 48px;
+    background: linear-gradient(135deg, var(--cyan), rgba(0,212,255,0.4));
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 20px;
+    color: #000;
+    box-shadow: 0 0 40px rgba(0,212,255,0.5);
+    animation: logoPulse 3s ease-in-out infinite;
+  }
+  .vp-logo-text {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.8);
+    letter-spacing: 4px;
+  }
+  .vp-scanline {
+    position: absolute;
+    width: 100%; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0.4;
+    animation: scanline 4s linear infinite;
+    top: 0;
+  }
+  @keyframes logoPulse {
+    0%, 100% { box-shadow: 0 0 40px rgba(0,212,255,0.5); }
+    50% { box-shadow: 0 0 60px rgba(0,212,255,0.8), 0 0 100px rgba(0,212,255,0.3); }
+  }
+  @keyframes scanline {
+    0% { top: 0; opacity: 0; }
+    10% { opacity: 0.4; }
+    90% { opacity: 0.4; }
+    100% { top: 100%; opacity: 0; }
+  }
+  .vp-info {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .vp-format {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .vp-format strong { color: var(--text-dim); }
+  .vp-play-btn {
+    width: 32px; height: 32px;
+    background: var(--cyan-dim);
+    border: 1px solid var(--border-bright);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 10px;
+    color: var(--cyan);
+  }
+
+  /* ============ TIMELINE BAR ============ */
+  .timeline-section {
+    padding: 0 0 60px;
+  }
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+  .timeline-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .tl-segment {
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .tl-segment:hover { filter: brightness(1.2); transform: translateY(-1px); }
+  .tl-s1 { width: 14%; background: rgba(255,77,109,0.2); color: #ff4d6d; border: 1px solid rgba(255,77,109,0.3); }
+  .tl-s2 { width: 20%; background: rgba(0,212,255,0.15); color: var(--cyan); border: 1px solid var(--border-bright); margin-left: 2px; }
+  .tl-s3 { width: 28%; background: rgba(57,217,138,0.15); color: var(--green); border: 1px solid rgba(57,217,138,0.3); margin-left: 2px; }
+  .tl-s4 { width: 17%; background: rgba(255,179,71,0.15); color: var(--amber); border: 1px solid rgba(255,179,71,0.3); margin-left: 2px; }
+  .tl-s5 { flex: 1; background: rgba(147,51,234,0.15); color: #c084fc; border: 1px solid rgba(147,51,234,0.3); margin-left: 2px; }
+  .tl-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .tl-timestamps {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding: 0 4px;
+  }
+  .tl-ts {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  /* ============ SCENES ============ */
+  .scenes-section { padding: 0 0 80px; }
+  .scenes-grid {
+    display: grid;
+    gap: 24px;
+  }
+
+  .scene-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    min-height: 260px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .scene-card:hover {
+    border-color: rgba(255,255,255,0.12);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+
+  /* Scene visual panel */
+  .scene-visual {
+    position: relative;
+    overflow: hidden;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Scene 1 - Problem */
+  .scene-visual.s1 {
+    background: linear-gradient(160deg, #120810 0%, #0a0005 100%);
+  }
+  .s1-keys {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 5px;
+    padding: 30px;
+    width: 100%;
+  }
+  .key {
+    aspect-ratio: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: rgba(255,255,255,0.3);
+    transition: all 0.1s;
+  }
+  .key.typing {
+    animation: keyPress 0.8s ease-in-out infinite;
+  }
+  .key.k1 { animation-delay: 0s; }
+  .key.k2 { animation-delay: 0.15s; }
+  .key.k3 { animation-delay: 0.3s; }
+  .key.k4 { animation-delay: 0.45s; }
+  .key.k5 { animation-delay: 0.6s; }
+  @keyframes keyPress {
+    0%, 100% { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.3); transform: scale(1); }
+    50% { background: rgba(255,77,109,0.2); color: #ff4d6d; border-color: rgba(255,77,109,0.4); transform: scale(0.95); }
+  }
+  .s1-repeat-badge {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(255,77,109,0.15);
+    border: 1px solid rgba(255,77,109,0.3);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #ff4d6d;
+    animation: badgeFade 2s ease-in-out infinite;
+  }
+  @keyframes badgeFade {
+    0%, 100% { opacity: 0.6; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-2px); }
+  }
+
+  /* Scene 2 - Intro */
+  .scene-visual.s2 {
+    background: linear-gradient(160deg, #050d1a 0%, #020810 100%);
+  }
+  .s2-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 30px;
+  }
+  .s2-logo-ring {
+    width: 80px; height: 80px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--cyan), #0077ff);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 28px;
+    color: #000;
+    box-shadow: 0 0 0 1px rgba(0,212,255,0.3), 0 0 40px rgba(0,212,255,0.4), 0 0 80px rgba(0,212,255,0.2);
+    animation: ringPulse 3s ease-in-out infinite;
+    position: relative;
+  }
+  .s2-logo-ring::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 24px;
+    border: 1px solid rgba(0,212,255,0.2);
+    animation: ringExpand 3s ease-in-out infinite;
+  }
+  .s2-logo-ring::after {
+    content: '';
+    position: absolute;
+    inset: -16px;
+    border-radius: 28px;
+    border: 1px solid rgba(0,212,255,0.1);
+    animation: ringExpand 3s ease-in-out infinite 0.3s;
+  }
+  @keyframes ringPulse {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(0,212,255,0.3), 0 0 40px rgba(0,212,255,0.4), 0 0 80px rgba(0,212,255,0.2); }
+    50% { box-shadow: 0 0 0 1px rgba(0,212,255,0.5), 0 0 60px rgba(0,212,255,0.6), 0 0 120px rgba(0,212,255,0.3); }
+  }
+  @keyframes ringExpand {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 0; transform: scale(1.1); }
+  }
+  .s2-name {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    animation: textGlow 3s ease-in-out infinite;
+  }
+  @keyframes textGlow {
+    0%, 100% { text-shadow: none; }
+    50% { text-shadow: 0 0 20px rgba(0,212,255,0.5); }
+  }
+  .s2-tagline {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* Scene 3 - Demo */
+  .scene-visual.s3 {
+    background: linear-gradient(160deg, #050d10 0%, #030a08 100%);
+    flex-direction: column;
+    align-items: stretch;
+    padding: 20px;
+    gap: 10px;
+  }
+  .demo-input-bar {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .demo-cursor {
+    width: 1px; height: 12px;
+    background: var(--cyan);
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  .demo-typing {
+    overflow: hidden;
+    white-space: nowrap;
+    animation: typeReveal 3s steps(40) infinite;
+    max-width: 200px;
+  }
+  @keyframes typeReveal {
+    0% { width: 0; }
+    60% { width: 200px; }
+    80% { width: 200px; }
+    100% { width: 0; }
+  }
+  .ai-pill {
+    align-self: flex-end;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 20px;
+    padding: 4px 12px 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--cyan);
+  }
+  .ai-pill-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--cyan);
+    animation: aiThink 1.5s ease-in-out infinite;
+  }
+  @keyframes aiThink {
+    0%, 100% { opacity: 0.4; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+  .demo-response {
+    background: rgba(57,217,138,0.06);
+    border: 1px solid rgba(57,217,138,0.15);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 10px;
+    color: rgba(57,217,138,0.8);
+    line-height: 1.6;
+    font-family: var(--sans);
+    font-weight: 300;
+    animation: responseAppear 3s ease-in-out infinite;
+  }
+  @keyframes responseAppear {
+    0%, 30% { opacity: 0; transform: translateY(4px); }
+    50%, 80% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; }
+  }
+
+  /* Scene 4 - Results */
+  .scene-visual.s4 {
+    background: linear-gradient(160deg, #0a0e08 0%, #050810 100%);
+    flex-direction: column;
+    align-items: stretch;
+    padding: 20px;
+    gap: 12px;
+    justify-content: center;
+  }
+  .metric-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .metric-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    width: 90px;
+    flex-shrink: 0;
+  }
+  .metric-bar-track {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .metric-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    animation: barFill 2.5s ease-out infinite;
+    transform-origin: left;
+  }
+  .metric-bar-fill.speed { background: linear-gradient(90deg, var(--cyan), rgba(0,212,255,0.5)); animation-delay: 0s; }
+  .metric-bar-fill.output { background: linear-gradient(90deg, var(--green), rgba(57,217,138,0.5)); animation-delay: 0.2s; }
+  .metric-bar-fill.error { background: linear-gradient(90deg, var(--amber), rgba(255,179,71,0.5)); animation-delay: 0.4s; }
+  @keyframes barFill {
+    0% { width: 0%; }
+    60%, 80% { width: var(--fill, 75%); }
+    100% { width: 0%; }
+  }
+  .metric-value {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    width: 44px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .metric-value.speed { color: var(--cyan); }
+  .metric-value.output { color: var(--green); }
+  .metric-value.error { color: var(--amber); }
+  .metric-big {
+    text-align: center;
+    padding: 12px;
+    background: rgba(0,212,255,0.04);
+    border: 1px solid rgba(0,212,255,0.1);
+    border-radius: 10px;
+    margin-top: 4px;
+  }
+  .metric-big-num {
+    font-family: var(--mono);
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--cyan);
+    animation: countUp 2.5s ease-out infinite;
+  }
+  @keyframes countUp {
+    0% { opacity: 0.3; }
+    50%, 80% { opacity: 1; }
+    100% { opacity: 0.3; }
+  }
+  .metric-big-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Scene 5 - CTA */
+  .scene-visual.s5 {
+    background: linear-gradient(160deg, #0a0510 0%, #050810 100%);
+  }
+  .s5-content {
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+  }
+  .s5-tagline-1 {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 18px;
+    font-weight: 300;
+    color: var(--text-dim);
+    animation: fadeCycle 4s ease-in-out infinite;
+  }
+  .s5-tagline-2 {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 18px;
+    font-weight: 300;
+    color: var(--text-dim);
+    animation: fadeCycle 4s ease-in-out infinite 1.5s;
+  }
+  .s5-main {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 2px;
+    padding: 10px 20px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    animation: ctaGlow 3s ease-in-out infinite;
+  }
+  @keyframes fadeCycle {
+    0%, 100% { opacity: 0.4; }
+    40%, 60% { opacity: 1; }
+  }
+  @keyframes ctaGlow {
+    0%, 100% { box-shadow: none; border-color: rgba(255,255,255,0.1); }
+    50% { box-shadow: 0 0 30px rgba(147,51,234,0.3); border-color: rgba(147,51,234,0.4); }
+  }
+  .s5-url {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: #c084fc;
+    letter-spacing: 1px;
+  }
+
+  /* Scene content panel */
+  .scene-content {
+    padding: 28px 32px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 16px;
+  }
+  .scene-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .scene-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    letter-spacing: 1px;
+  }
+  .scene-time {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: currentColor;
+  }
+  .s1-color { color: #ff4d6d; }
+  .s2-color { color: var(--cyan); }
+  .s3-color { color: var(--green); }
+  .s4-color { color: var(--amber); }
+  .s5-color { color: #c084fc; }
+  .scene-title {
+    font-family: var(--serif);
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .scene-body { display: flex; flex-direction: column; gap: 16px; }
+  .info-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .info-block-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .info-block-content {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.65;
+    font-weight: 300;
+  }
+  .info-block-content strong { color: var(--text); font-weight: 500; }
+  .script-text {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+  .tag-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: var(--surface2);
+  }
+  .scene-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .transition-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .transition-badge::before {
+    content: '→';
+    opacity: 0.5;
+  }
+
+  /* ============ PRODUCTION PANELS ============ */
+  .production-section {
+    padding: 0 0 80px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+  }
+  .prod-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  .prod-card-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .prod-card-title .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+  .prod-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .prod-item {
+    display: flex;
+    gap: 10px;
+    align-items: start;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    font-weight: 300;
+  }
+  .prod-item-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    min-width: 20px;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .prod-item strong { color: var(--text); font-weight: 500; }
+
+  /* ============ SPEC PANEL ============ */
+  .spec-section {
+    padding: 0 0 80px;
+  }
+  .spec-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    background: var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .spec-cell {
+    background: var(--surface);
+    padding: 24px;
+  }
+  .spec-cell-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .spec-cell-value {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .spec-cell-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 300;
+  }
+
+  /* ============ SCRIPT FULL ============ */
+  .script-section {
+    padding: 0 0 80px;
+  }
+  .script-full {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .script-header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .script-header-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .script-duration {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--cyan);
+    background: var(--cyan-dim);
+    border: 1px solid var(--border-bright);
+    border-radius: 4px;
+    padding: 3px 10px;
+  }
+  .script-lines {
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .script-line {
+    display: grid;
+    grid-template-columns: 100px 80px 1fr;
+    gap: 20px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+  }
+  .script-line:last-child { border-bottom: none; }
+  .script-line-scene {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding-top: 2px;
+  }
+  .script-line-time {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    padding-top: 2px;
+  }
+  .script-line-text {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+  .script-line-text em { font-style: normal; color: var(--text); font-weight: 400; }
+
+  /* ============ MOTION GUIDE ============ */
+  .motion-section {
+    padding: 0 0 100px;
+  }
+  .motion-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .motion-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  .motion-title {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .motion-subtitle {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .motion-props {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .motion-prop {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .motion-prop-key {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    width: 100px;
+    flex-shrink: 0;
+  }
+  .motion-prop-val {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+  .motion-prop-val strong { color: var(--text); font-weight: 500; }
+
+  /* ============ FOOTER ============ */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 30px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .footer-left {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .footer-right {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  /* Scene color accent bars */
+  .scene-card .scene-accent {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+  }
+  .scene-card { position: relative; }
+  .scene-card.sc1 { border-color: rgba(255,77,109,0.15); }
+  .scene-card.sc1:hover { border-color: rgba(255,77,109,0.3); }
+  .scene-card.sc2 { border-color: rgba(0,212,255,0.15); }
+  .scene-card.sc2:hover { border-color: rgba(0,212,255,0.3); }
+  .scene-card.sc3 { border-color: rgba(57,217,138,0.15); }
+  .scene-card.sc3:hover { border-color: rgba(57,217,138,0.3); }
+  .scene-card.sc4 { border-color: rgba(255,179,71,0.15); }
+  .scene-card.sc4:hover { border-color: rgba(255,179,71,0.3); }
+  .scene-card.sc5 { border-color: rgba(147,51,234,0.15); }
+  .scene-card.sc5:hover { border-color: rgba(147,51,234,0.3); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+  /* Screen recording dot */
+  .rec-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,77,109,0.15);
+    border: 1px solid rgba(255,77,109,0.3);
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: #ff4d6d;
+  }
+  .rec-dot {
+    width: 6px; height: 6px;
+    background: #ff4d6d;
+    border-radius: 50%;
+    animation: recBlink 1s step-end infinite;
+  }
+  @keyframes recBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="logo-mark">
+        <div class="logo-icon">S</div>
+        <div class="logo-text">SnapText <span>/ Video Storyboard</span></div>
+      </div>
+      <div class="header-meta">
+        <span class="badge badge-linkedin">LinkedIn Promo</span>
+        <span class="badge badge-duration">30–35 sec</span>
+        <span class="badge badge-version">v1.0</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-left">
+      <div class="hero-eyebrow">Production Storyboard</div>
+      <h1 class="hero-title">
+        SnapText<br>
+        <span class="highlight">Promo Film</span>
+      </h1>
+      <p class="hero-subtitle">
+        A 30-second cinematic product reveal for LinkedIn. Built for developers, founders, and technical professionals. Dark, minimal, precise — in the spirit of Linear and Raycast.
+      </p>
+      <div class="hero-stats">
+        <div class="stat">
+          <div class="stat-value">5</div>
+          <div class="stat-label">Scenes</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">35s</div>
+          <div class="stat-label">Total</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">16:9</div>
+          <div class="stat-label">Format</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">4K</div>
+          <div class="stat-label">Export</div>
+        </div>
+      </div>
+    </div>
+    <div class="hero-right">
+      <div class="video-preview-card">
+        <div class="vp-screen">
+          <div class="vp-gradient"></div>
+          <div class="vp-grid"></div>
+          <div class="vp-logo">
+            <div class="vp-logo-icon">S</div>
+            <div class="vp-logo-text">SNAPTEXT</div>
+          </div>
+          <div class="vp-scanline"></div>
+        </div>
+        <div class="vp-info">
+          <div class="vp-format"><strong>1920×1080</strong> · H.264 · 30fps</div>
+          <div class="vp-play-btn">▶</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TIMELINE -->
+  <section class="timeline-section">
+    <div class="section-label">// Scene Timeline</div>
+    <div class="timeline-bar">
+      <div class="tl-segment tl-s1"><div class="tl-dot"></div> HOOK</div>
+      <div class="tl-segment tl-s2"><div class="tl-dot"></div> INTRO</div>
+      <div class="tl-segment tl-s3"><div class="tl-dot"></div> DEMO</div>
+      <div class="tl-segment tl-s4"><div class="tl-dot"></div> RESULTS</div>
+      <div class="tl-segment tl-s5"><div class="tl-dot"></div> CTA</div>
+    </div>
+    <div class="tl-timestamps">
+      <span class="tl-ts">0:00</span>
+      <span class="tl-ts">0:05</span>
+      <span class="tl-ts">0:12</span>
+      <span class="tl-ts">0:22</span>
+      <span class="tl-ts">0:28</span>
+      <span class="tl-ts">0:35</span>
+    </div>
+  </section>
+
+  <!-- SCENES -->
+  <section class="scenes-section">
+    <div class="section-label">// Scene Breakdowns</div>
+    <div class="scenes-grid">
+
+      <!-- Scene 1: Hook -->
+      <div class="scene-card sc1">
+        <div class="scene-visual s1">
+          <div class="s1-keys">
+            <div class="key typing k1">T</div>
+            <div class="key typing k2">H</div>
+            <div class="key typing k3">A</div>
+            <div class="key typing k4">N</div>
+            <div class="key typing k5">K</div>
+            <div class="key">Y</div>
+            <div class="key">O</div>
+            <div class="key">U</div>
+            <div class="key typing k1">F</div>
+            <div class="key typing k2">O</div>
+            <div class="key typing k3">R</div>
+            <div class="key">T</div>
+            <div class="key typing k4">H</div>
+            <div class="key typing k5">E</div>
+            <div class="key">M</div>
+            <div class="key typing k1">E</div>
+            <div class="key typing k2">E</div>
+            <div class="key typing k3">T</div>
+          </div>
+          <div class="s1-repeat-badge">⟳ repeated 47×</div>
+          <div class="rec-badge"><div class="rec-dot"></div> SCREEN REC</div>
+        </div>
+        <div class="scene-content">
+          <div class="scene-header">
+            <span class="scene-num">SCENE 01</span>
+            <span class="scene-time s1-color">0:00 → 0:05</span>
+          </div>
+          <div class="scene-title">The Problem</div>
+          <div class="scene-body">
+            <div class="info-block">
+              <div class="info-block-label">VO / Caption Script</div>
+              <p class="script-text">"How many times do you type the same thing today? 10? 20? <em>47 times?</em>"</p>
+            </div>
+            <div class="info-block">
+              <div class="info-block-label">Visual Description</div>
+              <div class="info-block-content">
+                Close-up dark keyboard. Keys glow <strong>red</strong> as the same words type themselves over and over — "Thank you for the meeting," "Best regards," "As discussed." A counter in the top corner ticks up relentlessly. Screen dims, mood is heavy.
+              </div>
+            </div>
+            <div class="tag-row">
+              <span class="tag">slow zoom in</span>
+              <span class="tag">red tones</span>
+              <span class="tag">counter UI</span>
+              <span class="tag">repetition motif</span>
+            </div>
+          </div>
+          <div class="scene-footer">
+            <span class="transition-badge">Cross dissolve into Scene 2 · 0.6s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 2: Intro -->
+      <div class="scene-card sc2">
+        <div class="scene-visual s2">
+          <div class="s2-content">
+            <div class="s2-logo-ring">S</div>
+            <div class="s2-name">SnapText</div>
+            <div class="s2-tagline">AI-Powered Keyboard</div>
+          </div>
+        </div>
+        <div class="scene-content">
+          <div class="scene-header">
+            <span class="scene-num">SCENE 02</span>
+            <span class="scene-time s2-color">0:05 → 0:12</span>
+          </div>
+          <div class="scene-title">Product Reveal</div>
+          <div class="scene-body">
+            <div class="info-block">
+              <div class="info-block-label">VO / Caption Script</div>
+              <p class="script-text">"Introducing <em>SnapText</em> — the AI keyboard that learns how you write, so you never have to repeat yourself again."</p>
+            </div>
+            <div class="info-block">
+              <div class="info-block-label">Visual Description</div>
+              <div class="info-block-content">
+                Black screen. A single <strong>cyan ring expands</strong> from center. The SnapText logo materializes with a subtle glow pulse. The name appears character by character — monospaced, deliberate. Rings breathe outward like a radar ping.
+              </div>
+            </div>
+            <div class="tag-row">
+              <span class="tag">logo reveal</span>
+              <span class="tag">radial expand</span>
+              <span class="tag">typewriter text</span>
+              <span class="tag">cyan glow</span>
+            </div>
+          </div>
+          <div class="scene-footer">
+            <span class="transition-badge">Hard cut to Scene 3 · instant</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 3: Demo -->
+      <div class="scene-card sc3">
+        <div class="scene-visual s3" style="flex-direction: column; justify-content: center; gap: 10px;">
+          <div class="demo-input-bar">
+            <span style="color: var(--green); font-size: 9px;">⌨</span>
+            <div class="demo-typing">Thank you for joining the call...</div>
+            <div class="demo-cursor"></div>
+          </div>
+          <div class="ai-pill">
+            <div class="ai-pill-dot"></div>
+            SnapText is thinking
+          </div>
+          <div class="demo-response">
+            ✦ Thank you for the productive call today. I've noted our action items and will follow up by Friday with the full proposal. Looking forward to next steps.
+          </div>
+          <div class="rec-badge"><div class="rec-dot"></div> LIVE DEMO</div>
+        </div>
+        <div class="scene-content">
+          <div class="scene-header">
+            <span class="scene-num">SCENE 03</span>
+            <span class="scene-time s3-color">0:12 → 0:22</span>
+          </div>
+          <div class="scene-title">The Magic Moment</div>
+          <div class="scene-body">
+            <div class="info-block">
+              <div class="info-block-label">VO / Caption Script</div>
+              <p class="script-text">"You start typing — SnapText captures your intent. In milliseconds, <em>AI writes the rest.</em> Polished. Personalized. Perfect."</p>
+            </div>
+            <div class="info-block">
+              <div class="info-block-label">Visual Description</div>
+              <div class="info-block-content">
+                Screen recording of the app UI. User types a fragment — a glowing <strong>floating pill</strong> appears labeled "SnapText is generating." Text streams in below, letter by letter, glowing green. The AI-generated response is highlighted with a subtle green outline. Quick cuts: email, Slack, LinkedIn reply — all powered in seconds.
+              </div>
+            </div>
+            <div class="tag-row">
+              <span class="tag">screen recording</span>
+              <span class="tag">text stream</span>
+              <span class="tag">pill animation</span>
+              <span class="tag">multi-context cuts</span>
+            </div>
+          </div>
+          <div class="scene-footer">
+            <span class="transition-badge">Slide wipe left into Scene 4 · 0.4s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 4: Results -->
+      <div class="scene-card sc4">
+        <div class="scene-visual s4">
+          <div class="metric-big">
+            <div class="metric-big-num">4.7×</div>
+            <div class="metric-big-label">Faster Writing</div>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Writing Speed</span>
+            <div class="metric-bar-track"><div class="metric-bar-fill speed" style="--fill: 85%"></div></div>
+            <span class="metric-value speed">+85%</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Daily Output</span>
+            <div class="metric-bar-track"><div class="metric-bar-fill output" style="--fill: 70%"></div></div>
+            <span class="metric-value output">+70%</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Errors</span>
+            <div class="metric-bar-track"><div class="metric-bar-fill error" style="--fill: 60%"></div></div>
+            <span class="metric-value error">−60%</span>
+          </div>
+        </div>
+        <div class="scene-content">
+          <div class="scene-header">
+            <span class="scene-num">SCENE 04</span>
+            <span class="scene-time s4-color">0:22 → 0:28</span>
+          </div>
+          <div class="scene-title">Real Impact</div>
+          <div class="scene-body">
+            <div class="info-block">
+              <div class="info-block-label">VO / Caption Script</div>
+              <p class="script-text">"Developers and founders using SnapText write <em>4.7× faster</em>. Less friction. More flow. Your words, amplified."</p>
+            </div>
+            <div class="info-block">
+              <div class="info-block-label">Visual Description</div>
+              <div class="info-block-content">
+                Clean dark dashboard view. A <strong>large amber number</strong> "4.7×" animates into frame. Below it, three horizontal metric bars fill left to right with smooth easing. Numbers count up in real time. The whole panel has a warm amber glow suggesting heat, performance, energy.
+              </div>
+            </div>
+            <div class="tag-row">
+              <span class="tag">data viz</span>
+              <span class="tag">bar animation</span>
+              <span class="tag">counter</span>
+              <span class="tag">amber palette</span>
+            </div>
+          </div>
+          <div class="scene-footer">
+            <span class="transition-badge">Fade to black → Scene 5 · 0.8s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 5: CTA -->
+      <div class="scene-card sc5">
+        <div class="scene-visual s5">
+          <div class="s5-content">
+            <div class="s5-tagline-1">Write faster.</div>
+            <div class="s5-tagline-2">Think bigger.</div>
+            <div class="s5-main">SnapText.</div>
+            <div class="s5-url">snaptext.app · Free to start</div>
+          </div>
+        </div>
+        <div class="scene-content">
+          <div class="scene-header">
+            <span class="scene-num">SCENE 05</span>
+            <span class="scene-time s5-color">0:28 → 0:35</span>
+          </div>
+          <div class="scene-title">The Closing Call</div>
+          <div class="scene-body">
+            <div class="info-block">
+              <div class="info-block-label">VO / Caption Script</div>
+              <p class="script-text">"<em>Write faster. Think bigger.</em> SnapText — your keyboard, now with a brain. Try it free."</p>
+            </div>
+            <div class="info-block">
+              <div class="info-block-label">Visual Description</div>
+              <div class="info-block-content">
+                Deep black background. Two lines appear sequentially in elegant italic serif: <strong>"Write faster."</strong> then <strong>"Think bigger."</strong> — each with a 0.4s delay. Then: the SnapText logo and wordmark slam in with weight. URL fades in beneath. Hold 2 seconds. Gentle purple bloom fills the background.
+              </div>
+            </div>
+            <div class="tag-row">
+              <span class="tag">wordmark reveal</span>
+              <span class="tag">staggered text</span>
+              <span class="tag">purple bloom</span>
+              <span class="tag">clean hold</span>
+            </div>
+          </div>
+          <div class="scene-footer">
+            <span class="transition-badge">Iris close — END</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- FULL SCRIPT -->
+  <section class="script-section">
+    <div class="section-label">// Full VO Script</div>
+    <div class="script-full">
+      <div class="script-header">
+        <span class="script-header-title">Voiceover · Narrator Script</span>
+        <span class="script-duration">35 sec · ~85 words</span>
+      </div>
+      <div class="script-lines">
+        <div class="script-line">
+          <div class="script-line-scene" style="color: #ff4d6d;">Scene 01</div>
+          <div class="script-line-time">0:00–0:05</div>
+          <div class="script-line-text">"How many times do you type the same thing today? 10 times? 20? <em>47 times?</em>"</div>
+        </div>
+        <div class="script-line">
+          <div class="script-line-scene" style="color: var(--cyan);">Scene 02</div>
+          <div class="script-line-time">0:05–0:12</div>
+          <div class="script-line-text">"Introducing <em>SnapText</em> — the AI keyboard that learns how you write, so you never have to repeat yourself again."</div>
+        </div>
+        <div class="script-line">
+          <div class="script-line-scene" style="color: var(--green);">Scene 03</div>
+          <div class="script-line-time">0:12–0:22</div>
+          <div class="script-line-text">"You start typing — SnapText captures your intent. In milliseconds, <em>AI writes the rest.</em> Polished. Personalized. Perfect."</div>
+        </div>
+        <div class="script-line">
+          <div class="script-line-scene" style="color: var(--amber);">Scene 04</div>
+          <div class="script-line-time">0:22–0:28</div>
+          <div class="script-line-text">"Developers and founders using SnapText write <em>4.7× faster</em>. Less friction. More flow. Your words, amplified."</div>
+        </div>
+        <div class="script-line">
+          <div class="script-line-scene" style="color: #c084fc;">Scene 05</div>
+          <div class="script-line-time">0:28–0:35</div>
+          <div class="script-line-text">"<em>Write faster. Think bigger.</em> SnapText — your keyboard, now with a brain. Try it free."</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LINKEDIN SPECS -->
+  <section class="spec-section">
+    <div class="section-label">// LinkedIn Format Specifications</div>
+    <div class="spec-grid">
+      <div class="spec-cell">
+        <div class="spec-cell-label">Aspect Ratio</div>
+        <div class="spec-cell-value">16:9</div>
+        <div class="spec-cell-sub">1920×1080px native export · 1280×720 minimum</div>
+      </div>
+      <div class="spec-cell">
+        <div class="spec-cell-label">Duration</div>
+        <div class="spec-cell-value">30–35s</div>
+        <div class="spec-cell-sub">LinkedIn autoplay window · keep under 60s for full watch rates</div>
+      </div>
+      <div class="spec-cell">
+        <div class="spec-cell-label">Captions</div>
+        <div class="spec-cell-value">SRT</div>
+        <div class="spec-cell-sub">85% LinkedIn video is watched muted — captions are essential</div>
+      </div>
+      <div class="spec-cell">
+        <div class="spec-cell-label">File Format</div>
+        <div class="spec-cell-value">MP4</div>
+        <div class="spec-cell-sub">H.264 codec · Max 5GB · 30fps preferred · stereo audio</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRODUCTION PANELS -->
+  <section class="production-section">
+
+    <div class="prod-card">
+      <div class="prod-card-title" style="color: var(--cyan);"><span class="dot"></span> Screen Recording Shots</div>
+      <div class="prod-list">
+        <div class="prod-item">
+          <span class="prod-item-num">01</span>
+          <span><strong>App main window</strong> — the floating keyboard pill UI overlay on desktop. Show it appearing above a Gmail compose window.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">02</span>
+          <span><strong>AI generation flow</strong> — user types 4 words, SnapText expands to a full paragraph. Record at 60fps, slow to 40% in edit.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">03</span>
+          <span><strong>Context switching</strong> — cut between Gmail, Slack, LinkedIn reply box. Show the same pill appearing each time.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">04</span>
+          <span><strong>Onboarding/settings</strong> — brief 1s flash of a clean settings panel showing "personalize your tone" options.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">05</span>
+          <span><strong>Keyboard heatmap</strong> — if possible, a stylized animation showing SnapText reducing keystrokes by 70%.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="prod-card">
+      <div class="prod-card-title" style="color: var(--amber);"><span class="dot"></span> Music Direction</div>
+      <div class="prod-list">
+        <div class="prod-item">
+          <span class="prod-item-num">BPM</span>
+          <span><strong>90–110 BPM</strong> — tight enough to feel purposeful, slow enough to not rush the viewer.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">FEEL</span>
+          <span><strong>Ambient electronic + minimal techno</strong> — think Tycho, Jon Hopkins, or early Four Tet. Clean, forward-moving.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">HOOK</span>
+          <span>Music <strong>builds in Scene 3</strong> (demo), peaks during the metric reveal in Scene 4, then strips back to a single tone for Scene 5.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">SFX</span>
+          <span>Subtle <strong>key click SFX</strong> in Scene 1. Soft "ping" when SnapText generates a response. Logo whoosh in Scene 2.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">SOURCE</span>
+          <span>Suggest: <strong>Artlist, Musicbed, or Epidemic Sound</strong> — search "ambient productivity tech loop."</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="prod-card">
+      <div class="prod-card-title" style="color: var(--green);"><span class="dot"></span> LinkedIn Post Copy</div>
+      <div class="prod-list">
+        <div class="prod-item">
+          <span class="prod-item-num">L1</span>
+          <span><strong>Hook line:</strong> "I tracked my typing for a week. I typed the same sentences 47 times. So I built a fix."</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">L2</span>
+          <span><strong>Body:</strong> Introduce SnapText. 2–3 sentences on the problem + what it does. Keep it personal and founder-voiced.</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">L3</span>
+          <span><strong>Proof:</strong> "Users write 4.7× faster. It learns your tone. It works in every app you already use."</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">CTA</span>
+          <span><strong>Close:</strong> "Link in comments. Try it free." (LinkedIn suppresses links in post body — put the URL in first comment.)</span>
+        </div>
+        <div class="prod-item">
+          <span class="prod-item-num">TAG</span>
+          <span><strong>Hashtags:</strong> #productivity #AI #SaaS #developertools #buildinpublic #startups</span>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- MOTION GUIDE -->
+  <section class="motion-section">
+    <div class="section-label">// Motion Style Guide</div>
+    <div class="motion-grid">
+      <div class="motion-card">
+        <div class="motion-title">Easing & Timing</div>
+        <div class="motion-subtitle">Animation Principles</div>
+        <div class="motion-props">
+          <div class="motion-prop">
+            <span class="motion-prop-key">Entrance</span>
+            <span class="motion-prop-val">cubic-bezier(0.16, 1, 0.3, 1) — <strong>spring feel, overshoots slightly</strong></span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Exit</span>
+            <span class="motion-prop-val">ease-in · <strong>fast exit, 200ms max</strong></span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Transitions</span>
+            <span class="motion-prop-val"><strong>Cross-dissolve</strong> 600ms or hard-cut — no wipes, no spins</span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Text reveal</span>
+            <span class="motion-prop-val"><strong>Staggered lines</strong>, 80ms delay between words, fade + translateY(8px)</span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Numbers</span>
+            <span class="motion-prop-val"><strong>Count-up</strong> with ease-out · 1.2s total duration</span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Rule</span>
+            <span class="motion-prop-val"><strong>Nothing rotates</strong>. No bounce. Gravity is respected.</span>
+          </div>
+        </div>
+      </div>
+      <div class="motion-card">
+        <div class="motion-title">DaVinci Resolve Setup</div>
+        <div class="motion-subtitle">Production Settings</div>
+        <div class="motion-props">
+          <div class="motion-prop">
+            <span class="motion-prop-key">Timeline</span>
+            <span class="motion-prop-val"><strong>1920×1080 · 30fps</strong> · Color space: Rec.709</span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">LUT</span>
+            <span class="motion-prop-val">Apply a <strong>subtle cinematic cool grade</strong> — lift shadows toward deep blue</span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Vignette</span>
+            <span class="motion-prop-val"><strong>Soft edge vignette</strong> 15% on all scenes — keeps focus centered</span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Captions</span>
+            <span class="motion-prop-val">White · <strong>JetBrains Mono Bold</strong> · 48pt · black drop shadow 60%</span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Audio mix</span>
+            <span class="motion-prop-val">Music: <strong>-18dB</strong> · VO: <strong>-6dB</strong> · SFX: <strong>-12dB</strong></span>
+          </div>
+          <div class="motion-prop">
+            <span class="motion-prop-key">Export</span>
+            <span class="motion-prop-val"><strong>H.264 · 20Mbps</strong> · AAC stereo 48kHz · MP4 container</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="container" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+    <div class="footer-left">SnapText · LinkedIn Promo Storyboard · v1.0 · 2026</div>
+    <div class="footer-right">
+      <span>5 scenes · 35 seconds</span>
+      <span style="color: var(--border);">|</span>
+      <span>Write faster. Think bigger.</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

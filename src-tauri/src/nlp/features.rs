@@ -89,7 +89,7 @@ pub struct FeaturesOutput {
     pub tone: i32,                    // -5 to +5
     pub friction_phrases: Vec<String>,
     pub formality: i32,               // 0–10
-    pub contraction_rate: f32,       // 0.0–1.0
+    pub contraction_rate: f32,        // 0.0–1.0
     pub sentence_count: usize,
     pub avg_sentence_len: f32,
     pub question_count: usize,
@@ -104,6 +104,7 @@ pub struct FeaturesOutput {
     pub has_numbered_list: bool,
     pub paragraph_count: usize,
     pub detected_entities: Vec<(String, String)>,
+    pub emoji_count: usize,           // number of emoji characters
 }
 
 impl Default for FeaturesOutput {
@@ -131,6 +132,7 @@ impl Default for FeaturesOutput {
             has_numbered_list: false,
             paragraph_count: 1,
             detected_entities: vec![],
+            emoji_count: 0,
         }
     }
 }
@@ -234,6 +236,7 @@ pub fn extract(text: &str) -> FeaturesOutput {
     );
 
     let detected_entities = extract_entities(text, &sentences, &lower);
+    let emoji_count = text.chars().filter(|c| is_emoji(*c)).count();
 
     FeaturesOutput {
         word_count,
@@ -258,7 +261,19 @@ pub fn extract(text: &str) -> FeaturesOutput {
         has_numbered_list,
         paragraph_count,
         detected_entities,
+        emoji_count,
     }
+}
+
+fn is_emoji(c: char) -> bool {
+    matches!(c as u32,
+        0x1F600..=0x1F64F | // Emoticons
+        0x1F300..=0x1F5FF | // Misc symbols & pictographs
+        0x1F680..=0x1F6FF | // Transport & map
+        0x1F900..=0x1F9FF | // Supplemental symbols
+        0x2600..=0x26FF   | // Misc symbols
+        0x2700..=0x27BF     // Dingbats
+    )
 }
 
 pub fn split_sentences(text: &str) -> Vec<String> {

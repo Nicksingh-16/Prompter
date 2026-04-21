@@ -9,6 +9,7 @@ export default defineConfig({
       input: {
         main:   resolve(__dirname, 'index.html'),
         loader: resolve(__dirname, 'loader.html'),
+        pill:   resolve(__dirname, 'pill.html'),
       },
     },
   },
