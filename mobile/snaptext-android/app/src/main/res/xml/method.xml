@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.snaptext.keyboard.ui.SettingsActivity"
+    android:icon="@mipmap/ic_launcher">
+    <subtype
+        android:label="English"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard" />
+    <subtype
+        android:label="Hinglish"
+        android:imeSubtypeLocale="hi"
+        android:imeSubtypeMode="keyboard" />
+</input-method>

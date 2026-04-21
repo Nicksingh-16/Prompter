@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="keyboard_height">280dp</dimen>
+    <dimen name="key_height">54dp</dimen>
+    <dimen name="key_margin">3dp</dimen>
+    <dimen name="key_radius">10dp</dimen>
+    <dimen name="key_text_size">18sp</dimen>
+    <dimen name="suggestion_bar_height">42dp</dimen>
+    <dimen name="ai_panel_height">200dp</dimen>
+    <dimen name="mode_chip_padding_h">14dp</dimen>
+    <dimen name="mode_chip_padding_v">7dp</dimen>
+    <dimen name="tone_bar_height">3dp</dimen>
+    <dimen name="clip_item_height">44dp</dimen>
+    <dimen name="smart_reply_height">32dp</dimen>
+    <dimen name="tmpl_field_height">36dp</dimen>
+</resources>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            background: transparent;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            background: #1a1a1e;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 3px;
+            box-shadow:
+                0 8px 32px rgba(0, 0, 0, 0.5),
+                0 2px 8px rgba(0, 0, 0, 0.3);
+            animation: fadeIn 0.12s ease-out both;
+        }
+
+        .pill-btn {
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 5px 12px;
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.2px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.1s ease;
+        }
+
+        .pill-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+        }
+
+        .pill-btn:active {
+            transform: scale(0.96);
+        }
+
+        .pill-btn.accent {
+            background: rgba(99, 102, 241, 0.15);
+            color: rgba(129, 140, 248, 0.9);
+        }
+
+        .pill-btn.accent:hover {
+            background: rgba(99, 102, 241, 0.25);
+            color: #a5b4fc;
+        }
+
+        .pill-divider {
+            width: 1px;
+            height: 14px;
+            background: rgba(255, 255, 255, 0.08);
+            margin: 0 1px;
+            flex-shrink: 0;
+        }
+
+        .pill-dismiss {
+            background: transparent;
+            border: none;
+            border-radius: 5px;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.25);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .pill-dismiss:hover {
+            background: rgba(255, 255, 255, 0.07);
+            color: rgba(255, 255, 255, 0.55);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(3px) scale(0.97);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="pill" id="pill">
+        <button class="pill-btn accent" data-mode="Reply">Reply</button>
+        <button class="pill-btn accent" data-mode="Do">Do</button>
+        <button class="pill-btn" data-mode="Correct">Fix</button>
+        <button class="pill-btn" data-mode="Prompt">Prompt</button>
+        <div class="pill-divider"></div>
+        <button class="pill-dismiss" id="pill-dismiss" title="Dismiss">×</button>
+    </div>
+
+    <script type="module" src="/src/pill.ts"></script>
+</body>
+
+</html>

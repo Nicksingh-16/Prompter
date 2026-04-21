@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SnapText</string>
+    <string name="ime_name">SnapText Keyboard</string>
+
+    <!-- AI Modes -->
+    <string name="mode_reply">Reply</string>
+    <string name="mode_correct">Fix</string>
+    <string name="mode_professional">Pro</string>
+    <string name="mode_prompt">Prompt</string>
+    <string name="mode_translate">Translate</string>
+    <string name="mode_email">Email</string>
+    <string name="mode_casual">Casual</string>
+    <string name="mode_summarize">Summary</string>
+    <string name="mode_custom">Custom</string>
+
+    <!-- Keyboard -->
+    <string name="ai_button_label">AI</string>
+    <string name="insert_result">Insert</string>
+    <string name="copy_result">Copy</string>
+    <string name="cancel">Cancel</string>
+    <string name="generating">Thinking…</string>
+
+    <!-- Settings -->
+    <string name="settings_title">SnapText Settings</string>
+    <string name="enable_keyboard">Enable SnapText Keyboard</string>
+    <string name="enable_keyboard_desc">Go to Settings → Language &amp; Input → SnapText</string>
+    <string name="set_default">Set as Default Keyboard</string>
+    <string name="ai_mode_title">AI Provider</string>
+    <string name="ai_mode_cloud">Cloud (Free, 20/day)</string>
+    <string name="ai_mode_byok">Your Gemini API Key</string>
+    <string name="usage_label">Today\'s usage</string>
+    <string name="usage_format">%d / %d transforms</string>
+
+    <!-- New modes -->
+    <string name="mode_ghostwriter">Expand</string>
+    <string name="mode_sayitbetter">Say It Better</string>
+    <string name="mode_smartreply">Smart Reply</string>
+
+    <!-- Tone Guard -->
+    <string name="tone_positive">Looking good!</string>
+    <string name="tone_caution">Might sound harsh</string>
+    <string name="tone_harsh">Consider softening</string>
+
+    <!-- Clipboard Hub -->
+    <string name="clipboard_title">Clipboard</string>
+    <string name="clipboard_empty">No clipboard items yet</string>
+    <string name="clipboard_clear">Clear</string>
+    <string name="clipboard_pin">Pin</string>
+    <string name="clipboard_transform">Transform &amp; Paste</string>
+
+    <!-- Templates -->
+    <string name="templates_title">Templates</string>
+    <string name="templates_fill">Fill &amp; Send</string>
+    <string name="templates_insert">Insert</string>
+
+    <!-- Translate -->
+    <string name="translate_on">Translate ON</string>
+    <string name="translate_off">Translate OFF</string>
+
+    <!-- Analytics -->
+    <string name="analytics_title">Your Stats</string>
+    <string name="analytics_streak">Day Streak</string>
+    <string name="analytics_transforms">Messages Improved</string>
+    <string name="analytics_tone">Avg Tone</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome">Welcome to SnapText</string>
+    <string name="onboarding_tagline">AI-powered writing, right from your keyboard</string>
+    <string name="onboarding_step1">Type in any app</string>
+    <string name="onboarding_step1_desc">WhatsApp, Gmail, LinkedIn — anywhere you write</string>
+    <string name="onboarding_step2">Tap the ✨ button</string>
+    <string name="onboarding_step2_desc">Choose Reply, Fix, Pro, or Prompt mode</string>
+    <string name="onboarding_step3">Insert the result</string>
+    <string name="onboarding_step3_desc">AI transforms your text and inserts it instantly</string>
+    <string name="onboarding_get_started">Get Started</string>
+</resources>

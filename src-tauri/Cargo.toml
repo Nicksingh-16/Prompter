@@ -12,6 +12,17 @@ rust-version = "1.77.2"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[profile.release]
+opt-level   = "z"
+lto         = true
+codegen-units = 1
+strip       = true
+panic       = "abort"
+
+[profile.dev]
+opt-level = 0
+debug     = true
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -22,6 +33,7 @@ log = "0.4"
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-shell = "2"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
 enigo = "0.2.0"
 arboard = "3.6.1"
 
@@ -29,6 +41,12 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 futures-util = "0.3"
+sysinfo = "0.30"
+uuid = { version = "1", features = ["v4"] }
+unicode-normalization = "0.1"
+sha2 = "0.10"
+keyring = "2"
+zeroize = { version = "1", features = ["derive"] }
 
 # NOTE: removed the duplicate [target.'cfg(...)'.dependencies] block for
 # tauri-plugin-global-shortcut — it was already listed above and the

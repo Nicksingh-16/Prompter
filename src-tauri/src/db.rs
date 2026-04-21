@@ -11,6 +11,18 @@ pub fn init_db(app_dir: &Path) -> Result<Connection> {
     // Enable WAL for better concurrent read perf
     conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
+    // RAG schema migration — safe to run every startup; ignored if columns already exist
+    let _ = conn.execute("ALTER TABLE history ADD COLUMN embedding     BLOB", []);
+    let _ = conn.execute("ALTER TABLE history ADD COLUMN content_hash  TEXT", []);
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_history_mode_ts
+             ON history(mode, timestamp DESC)", [],
+    );
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_history_no_embedding
+             ON history(id) WHERE embedding IS NULL", [],
+    );
+
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS history (
             id              INTEGER PRIMARY KEY,
@@ -20,7 +32,9 @@ pub fn init_db(app_dir: &Path) -> Result<Connection> {
             output          TEXT,
             char_count      INTEGER,
             tone_score      INTEGER DEFAULT 0,
-            formality_score INTEGER DEFAULT 5
+            formality_score INTEGER DEFAULT 5,
+            embedding       BLOB,
+            content_hash    TEXT
         );
 
         CREATE TABLE IF NOT EXISTS intent_corrections (
@@ -30,15 +44,6 @@ pub fn init_db(app_dir: &Path) -> Result<Connection> {
             chosen_intent    TEXT NOT NULL,
             confidence       REAL NOT NULL,
             text_length      INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS intent_weight_overrides (
-            id           INTEGER PRIMARY KEY,
-            from_intent  TEXT NOT NULL,
-            to_intent    TEXT NOT NULL,
-            adjustment   REAL NOT NULL DEFAULT 0.0,
-            sample_count INTEGER NOT NULL DEFAULT 1,
-            UNIQUE(from_intent, to_intent)
         );
 
         CREATE TABLE IF NOT EXISTS voice_profile (
@@ -64,10 +69,42 @@ pub fn init_db(app_dir: &Path) -> Result<Connection> {
         CREATE TABLE IF NOT EXISTS config (
             key_name TEXT PRIMARY KEY,
             value    TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id         INTEGER PRIMARY KEY,
+            timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            mode       TEXT NOT NULL,
+            ai_mode    TEXT NOT NULL,
+            char_count INTEGER NOT NULL,
+            was_stored INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS reply_feedback (
+            id           INTEGER PRIMARY KEY,
+            timestamp    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            input_preview TEXT NOT NULL,
+            ai_output    TEXT NOT NULL,
+            accepted     INTEGER NOT NULL DEFAULT 0,
+            contact_hint TEXT
         );",
     )?;
 
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_feedback_contact
+             ON reply_feedback(contact_hint, accepted, timestamp DESC)",
+        [],
+    );
+
     Ok(conn)
+}
+
+/// Delete history entries older than `days`. Called at startup.
+pub fn cleanup_old_history(conn: &Connection, days: i64) {
+    let _ = conn.execute(
+        "DELETE FROM history WHERE timestamp < datetime('now', printf('-%d days', ?1))",
+        params![days],
+    );
 }
 
 pub fn set_config(conn: &Connection, key: &str, value: &str) -> Result<()> {
@@ -87,7 +124,8 @@ pub fn get_config(conn: &Connection, key: &str) -> Result<String> {
     )
 }
 
-/// Append a row to history and prune to the most recent 100.
+/// Append a row to history and prune to the most recent 500.
+/// `content_hash` — SHA-256 hex of (preview + mode) for deduplication.
 pub fn save_history(
     conn: &Connection,
     preview: &str,
@@ -95,20 +133,95 @@ pub fn save_history(
     output: &str,
     tone_score: i32,
     formality_score: i32,
+    embedding:     Option<&[u8]>,
+    content_hash:  Option<&str>,
 ) -> Result<()> {
+    // Dedup: skip if identical content+mode already stored
+    if let Some(hash) = content_hash {
+        let exists: bool = conn.query_row(
+            "SELECT 1 FROM history WHERE content_hash = ?1 AND mode = ?2 LIMIT 1",
+            params![hash, mode],
+            |_| Ok(true),
+        ).unwrap_or(false);
+        if exists { return Ok(()); }
+    }
+
     conn.execute(
-        "INSERT INTO history (input_preview, mode, output, char_count, tone_score, formality_score)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![preview, mode, output, output.len() as i32, tone_score as i32, formality_score as i32],
+        "INSERT INTO history
+             (input_preview, mode, output, char_count, tone_score, formality_score, embedding, content_hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            preview, mode, output, output.len() as i32,
+            tone_score as i32, formality_score as i32,
+            embedding, content_hash
+        ],
     )?;
-    // Prune to 100 most recent
+    // Prune to 500 most recent (was 100 — more history = better RAG)
     conn.execute(
         "DELETE FROM history WHERE id NOT IN (
-            SELECT id FROM history ORDER BY timestamp DESC LIMIT 100
+            SELECT id FROM history ORDER BY timestamp DESC LIMIT 500
          )",
         [],
     )?;
     Ok(())
+}
+
+/// Store an embedding BLOB for an existing history row (called from background task).
+pub fn update_embedding(conn: &Connection, id: i64, embedding: &[u8]) -> Result<()> {
+    conn.execute("UPDATE history SET embedding = ?1 WHERE id = ?2", params![embedding, id])?;
+    Ok(())
+}
+
+/// Look up the most recently inserted history row for a given (preview, mode) pair.
+/// Used by the background embedding task to find the row to update.
+pub fn get_last_history_id(conn: &Connection, preview: &str, mode: &str) -> Option<i64> {
+    conn.query_row(
+        "SELECT id FROM history WHERE input_preview = ?1 AND mode = ?2 ORDER BY timestamp DESC LIMIT 1",
+        params![preview, mode],
+        |row| row.get(0),
+    ).ok()
+}
+
+/// Fetch history rows including their embeddings for semantic RAG scoring.
+/// Returns (id, input_preview, output, embedding_bytes_or_none).
+pub fn get_history_with_embeddings(
+    conn: &Connection,
+    mode: &str,
+    limit: i64,
+) -> Result<Vec<(i64, String, String, Option<Vec<u8>>)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, input_preview, output, embedding
+           FROM history
+          WHERE mode = ?1 AND input_preview != '' AND output != ''
+          ORDER BY timestamp DESC LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![mode, limit], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<Vec<u8>>>(3)?,
+        ))
+    })?;
+    rows.collect()
+}
+
+
+/// Load the top (suggested → chosen) correction pairs that have happened ≥ 3 times.
+/// Used at startup to seed the adaptive mode-suggestion override map.
+pub fn get_top_corrections(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT suggested_intent, chosen_intent, COUNT(*) as cnt
+           FROM intent_corrections
+          GROUP BY suggested_intent, chosen_intent
+         HAVING cnt >= 3
+          ORDER BY cnt DESC
+          LIMIT 20"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    rows.collect()
 }
 
 /// Record that the user chose a different intent than suggested.
@@ -124,39 +237,8 @@ pub fn save_correction(
          VALUES (?1, ?2, ?3, ?4)",
         params![suggested, chosen, confidence, text_length as i64],
     )?;
-    // Recompute override for this pair after every 3 corrections
-    recompute_weight_override(conn, suggested, chosen)?;
     Ok(())
 }
-
-/// Recompute the weight adjustment for a (from→to) pair.
-/// Returns the new adjustment value.
-fn recompute_weight_override(conn: &Connection, from: &str, to: &str) -> Result<()> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM intent_corrections WHERE suggested_intent=?1 AND chosen_intent=?2",
-        params![from, to],
-        |r| r.get(0),
-    )?;
-
-    if count < 3 {
-        return Ok(()); // not enough data yet
-    }
-
-    // Adjustment grows logarithmically: 0.1 * log2(count)
-    let adjustment = 0.1 * (count as f64).log2() as f32;
-
-    conn.execute(
-        "INSERT INTO intent_weight_overrides (from_intent, to_intent, adjustment, sample_count)
-         VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(from_intent, to_intent) DO UPDATE
-           SET adjustment=excluded.adjustment,
-               sample_count=excluded.sample_count",
-        params![from, to, adjustment, count],
-    )?;
-    Ok(())
-}
-
-/// Load all learned weight overrides. Used in lib.rs before intent scoring.
 
 
 /// --- Feature 1: Personal Voice Engine (Moat) ---
@@ -168,12 +250,25 @@ pub fn observe_session(
     formality: i32,
     _word_count: usize,
 ) -> rusqlite::Result<()> {
-    // 1. Extract Opener (first word if alpha)
+    observe_session_v2(conn, text, tone, formality, 0.0, 0.0, 0)
+}
+
+pub fn observe_session_v2(
+    conn: &rusqlite::Connection,
+    text: &str,
+    tone: i32,
+    formality: i32,
+    contraction_rate: f32,
+    avg_sentence_len: f32,
+    emoji_count: usize,
+) -> rusqlite::Result<()> {
     let words: Vec<&str> = text.split_whitespace().collect();
+
+    // 1. Opener (first alphabetic word)
     if let Some(first) = words.first() {
         let clean = first.trim_matches(|c: char| !c.is_alphabetic());
         if !clean.is_empty() && clean.len() < 15 {
-             conn.execute(
+            conn.execute(
                 "INSERT INTO voice_profile (feature_type, feature_key, count) \
                  VALUES ('opener', ?, 1) \
                  ON CONFLICT(feature_type, feature_key) DO UPDATE SET count = count + 1, last_seen = CURRENT_TIMESTAMP",
@@ -182,11 +277,11 @@ pub fn observe_session(
         }
     }
 
-    // 2. Extract Closer (last word if short)
+    // 2. Closer (last alphabetic word)
     if let Some(last) = words.last() {
         let clean = last.trim_matches(|c: char| !c.is_alphabetic());
         if !clean.is_empty() && clean.len() < 15 {
-             conn.execute(
+            conn.execute(
                 "INSERT INTO voice_profile (feature_type, feature_key, count) \
                  VALUES ('closer', ?, 1) \
                  ON CONFLICT(feature_type, feature_key) DO UPDATE SET count = count + 1, last_seen = CURRENT_TIMESTAMP",
@@ -195,34 +290,64 @@ pub fn observe_session(
         }
     }
 
-    // 3. Vocab Fingerprinting (long words, unique)
-    for word in words {
-        let clean = word.trim_matches(|c: char| !c.is_alphabetic());
-        if clean.len() > 6 {
-            conn.execute(
-                "INSERT INTO voice_profile (feature_type, feature_key, count) \
-                 VALUES ('vocab', ?, 1) \
-                 ON CONFLICT(feature_type, feature_key) DO UPDATE SET count = count + 1, last_seen = CURRENT_TIMESTAMP",
-                [clean.to_lowercase()],
-            )?;
-        }
+    // 3. Formality & Tone rolling averages
+    for (key, val) in &[("formality", formality as f64), ("tone", tone as f64)] {
+        conn.execute(
+            "INSERT INTO voice_profile (feature_type, feature_key, value, count) \
+             VALUES ('stat', ?, ?, 1) \
+             ON CONFLICT(feature_type, feature_key) DO UPDATE SET \
+               value = ((CAST(value AS REAL) * count) + ?) / (count + 1), count = count + 1",
+            rusqlite::params![key, val.to_string(), val],
+        )?;
     }
 
-    // 4. Formality & Tone averages
+    // 4. Contraction rate rolling average
     conn.execute(
         "INSERT INTO voice_profile (feature_type, feature_key, value, count) \
-         VALUES ('stat', 'formality', ?, 1) \
-         ON CONFLICT(feature_type, feature_key) DO UPDATE SET value = ((CAST(value AS REAL) * count) + ?) / (count + 1), count = count + 1",
-        [formality.to_string(), formality.to_string()],
+         VALUES ('stat', 'contraction_rate', ?, 1) \
+         ON CONFLICT(feature_type, feature_key) DO UPDATE SET \
+           value = ((CAST(value AS REAL) * count) + ?) / (count + 1), count = count + 1",
+        [contraction_rate.to_string(), contraction_rate.to_string()],
     )?;
 
+    // 5. Average sentence length rolling average
     conn.execute(
         "INSERT INTO voice_profile (feature_type, feature_key, value, count) \
-         VALUES ('stat', 'tone', ?, 1) \
-         ON CONFLICT(feature_type, feature_key) DO UPDATE SET value = ((CAST(value AS REAL) * count) + ?) / (count + 1), count = count + 1",
-        [tone.to_string(), tone.to_string()],
+         VALUES ('stat', 'avg_sentence_len', ?, 1) \
+         ON CONFLICT(feature_type, feature_key) DO UPDATE SET \
+           value = ((CAST(value AS REAL) * count) + ?) / (count + 1), count = count + 1",
+        [avg_sentence_len.to_string(), avg_sentence_len.to_string()],
     )?;
 
+    // 6. Emoji usage flag (ratio of sessions that used emoji)
+    let emoji_used = if emoji_count > 0 { 1.0_f64 } else { 0.0_f64 };
+    conn.execute(
+        "INSERT INTO voice_profile (feature_type, feature_key, value, count) \
+         VALUES ('stat', 'emoji_rate', ?, 1) \
+         ON CONFLICT(feature_type, feature_key) DO UPDATE SET \
+           value = ((CAST(value AS REAL) * count) + ?) / (count + 1), count = count + 1",
+        [emoji_used.to_string(), emoji_used.to_string()],
+    )?;
+
+    Ok(())
+}
+
+/// Record a per-contact communication pattern (opener/closer used with a specific person).
+pub fn record_contact_pattern(
+    conn: &Connection,
+    entity_name: &str,
+    attr: &str,    // "opener" or "closer"
+    value: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO context_memory (entity_type, entity_name, attribute, value) \
+         VALUES ('person', ?1, ?2, ?3) \
+         ON CONFLICT(entity_type, entity_name, attribute) DO UPDATE SET \
+           value = CASE WHEN seen_count < 3 THEN excluded.value ELSE value END, \
+           seen_count = seen_count + 1, \
+           last_seen = CURRENT_TIMESTAMP",
+        params![entity_name, attr, value],
+    )?;
     Ok(())
 }
 
@@ -342,6 +467,39 @@ pub fn get_communication_report(conn: &Connection) -> Result<CommReport> {
         friction_hotspots: friction,
     })
 }
+
+/// Store detected language for a contact so future replies auto-match it.
+pub fn record_contact_language(
+    conn: &Connection,
+    entity_name: &str,
+    language: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO context_memory (entity_type, entity_name, attribute, value)
+         VALUES ('person', ?1, 'language', ?2)
+         ON CONFLICT(entity_type, entity_name, attribute) DO UPDATE SET
+           value = excluded.value,
+           last_seen = CURRENT_TIMESTAMP,
+           seen_count = seen_count + 1",
+        params![entity_name, language],
+    )?;
+    Ok(())
+}
+
+/// Retrieve the stored language for a contact (only if seen >= 2 times).
+pub fn get_contact_language(
+    conn: &Connection,
+    entity_name: &str,
+) -> Result<Option<String>> {
+    use rusqlite::OptionalExtension;
+    conn.query_row(
+        "SELECT value FROM context_memory
+         WHERE entity_name = ?1 AND attribute = 'language' AND seen_count >= 2",
+        params![entity_name],
+        |row| row.get(0),
+    ).optional()
+}
+
 // ── History read-back ──────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Serialize)]
@@ -352,6 +510,57 @@ pub struct HistoryEntry {
     pub mode: String,
     pub output: String,
 }
+
+// ── Audit log ──────────────────────────────────────────────────────────────
+
+pub fn save_audit_entry(
+    conn: &Connection,
+    mode: &str,
+    ai_mode: &str,
+    char_count: usize,
+    was_stored: bool,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO audit_log (mode, ai_mode, char_count, was_stored) VALUES (?1, ?2, ?3, ?4)",
+        params![mode, ai_mode, char_count as i64, was_stored as i64],
+    )?;
+    // Keep last 500 audit entries
+    conn.execute(
+        "DELETE FROM audit_log WHERE id NOT IN (SELECT id FROM audit_log ORDER BY timestamp DESC LIMIT 500)",
+        [],
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct AuditEntry {
+    pub id: i64,
+    pub timestamp: String,
+    pub mode: String,
+    pub ai_mode: String,
+    pub char_count: i64,
+    pub was_stored: bool,
+}
+
+pub fn get_audit_log(conn: &Connection, limit: i64) -> Result<Vec<AuditEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, timestamp, mode, ai_mode, char_count, was_stored
+         FROM audit_log ORDER BY timestamp DESC LIMIT ?1"
+    )?;
+    let rows = stmt.query_map(params![limit], |row| {
+        Ok(AuditEntry {
+            id:         row.get(0)?,
+            timestamp:  row.get(1)?,
+            mode:       row.get(2)?,
+            ai_mode:    row.get(3)?,
+            char_count: row.get(4)?,
+            was_stored: row.get::<_, i64>(5)? != 0,
+        })
+    })?;
+    rows.collect()
+}
+
+// ── History read-back ──────────────────────────────────────────────────────
 
 pub fn get_recent_history(conn: &Connection, limit: i64) -> Result<Vec<HistoryEntry>> {
     let mut stmt = conn.prepare(
@@ -366,6 +575,50 @@ pub fn get_recent_history(conn: &Connection, limit: i64) -> Result<Vec<HistoryEn
             mode:          row.get(3)?,
             output:        row.get(4)?,
         })
+    })?;
+    rows.collect()
+}
+
+// ── Reply feedback ─────────────────────────────────────────────────────────
+
+/// Save whether the user accepted or rejected an AI-generated reply.
+/// `contact_hint` — the contact name detected from the message (may be None).
+pub fn save_reply_feedback(
+    conn: &Connection,
+    input_preview: &str,
+    ai_output: &str,
+    accepted: bool,
+    contact_hint: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO reply_feedback (input_preview, ai_output, accepted, contact_hint)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![input_preview, ai_output, accepted as i64, contact_hint],
+    )?;
+    // Keep last 1000 feedback rows
+    conn.execute(
+        "DELETE FROM reply_feedback WHERE id NOT IN (
+             SELECT id FROM reply_feedback ORDER BY timestamp DESC LIMIT 1000
+         )",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Return the most recent accepted (input, reply) pairs for a specific contact.
+/// Used as few-shot RAG examples in the Reply prompt.
+pub fn get_accepted_reply_examples(
+    conn: &Connection,
+    contact_hint: &str,
+    limit: i64,
+) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT input_preview, ai_output FROM reply_feedback
+          WHERE accepted = 1 AND contact_hint = ?1
+          ORDER BY timestamp DESC LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![contact_hint, limit], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })?;
     rows.collect()
 }

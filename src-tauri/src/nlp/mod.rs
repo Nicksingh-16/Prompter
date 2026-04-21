@@ -15,9 +15,9 @@ pub mod normalize;
 pub mod language;
 pub mod intent;
 pub mod features;
-pub mod local_engine;
 pub mod prompt;
 pub mod data;
+pub mod thread;
 
 // Required by prompt.rs without a circular import
 pub mod mod_types;
@@ -83,5 +83,8 @@ pub fn analyze(raw: &str) -> TextContext {
         length_bucket,
         suggested_mode,
         detected_entities: feats.detected_entities,
+        emoji_count: feats.emoji_count,
+        contraction_rate: feats.contraction_rate,
+        avg_sentence_len: feats.avg_sentence_len,
     }
 }

@@ -6,5 +6,10 @@ compatibility_date = "2024-01-01"
 binding = "USAGE"
 id = "fa3eb3347c4648d5be763bb8b219627f"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "snaptext-analytics"
+database_id = "c182be65-0282-4b5a-b044-6fcb3c83f6a9"
+
 # Secrets (set via: npx wrangler secret put GEMINI_KEY_1)
-# GEMINI_KEY_1, GEMINI_KEY_2, GEMINI_KEY_3, PRO_SECRET
+# GEMINI_KEY_1, GEMINI_KEY_2, GEMINI_KEY_3, APP_SECRET

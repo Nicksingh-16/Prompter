@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/keyboard_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/bg_keyboard">
+
+    <!-- AI Suggestion / Mode Bar -->
+    <include layout="@layout/ai_bar" />
+
+    <!-- AI Result Panel (hidden by default) -->
+    <include layout="@layout/ai_result_panel" />
+
+    <!-- Clipboard Hub Panel (hidden by default) -->
+    <include layout="@layout/clipboard_panel" />
+
+    <!-- Templates Panel (hidden by default) -->
+    <include layout="@layout/template_panel" />
+
+    <!-- Keyboard rows -->
+    <LinearLayout
+        android:id="@+id/keyboard_rows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="3dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="30dp">
+
+        <!-- Row 1: q w e r t y u i o p -->
+        <LinearLayout
+            android:id="@+id/row1"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/key_height"
+            android:orientation="horizontal" />
+
+        <!-- Row 2: a s d f g h j k l -->
+        <LinearLayout
+            android:id="@+id/row2"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/key_height"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp" />
+
+        <!-- Row 3: shift z x c v b n m backspace -->
+        <LinearLayout
+            android:id="@+id/row3"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/key_height"
+            android:orientation="horizontal" />
+
+        <!-- Row 4: ?123 , space . mic enter -->
+        <LinearLayout
+            android:id="@+id/row4"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/key_height"
+            android:orientation="horizontal" />
+
+        <!-- Row 5: tools row (clipboard, templates, translate) — minimal -->
+        <LinearLayout
+            android:id="@+id/row_tools"
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingHorizontal="40dp" />
+
+    </LinearLayout>
+</LinearLayout>

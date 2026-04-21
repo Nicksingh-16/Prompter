@@ -37,6 +37,10 @@ pub struct TextContext {
     pub suggested_mode: String,
     /// Detected people, projects, or companies for context memory
     pub detected_entities: Vec<(String, String)>, // (name, type)
+    /// Voice DNA signals
+    pub emoji_count: usize,
+    pub contraction_rate: f32,
+    pub avg_sentence_len: f32,
 }
 
 impl TextContext {
@@ -60,6 +64,9 @@ impl TextContext {
             length_bucket: LengthBucket::Short,
             suggested_mode: "Fix".into(),
             detected_entities: vec![],
+            emoji_count: 0,
+            contraction_rate: 0.0,
+            avg_sentence_len: 0.0,
         }
     }
 }

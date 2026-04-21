@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/clipboard_panel"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/ai_panel_height"
+    android:orientation="vertical"
+    android:background="@color/bg_secondary"
+    android:visibility="gone"
+    android:paddingHorizontal="10dp"
+    android:paddingTop="8dp">
+
+    <!-- Header: title + category filter + close -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="6dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="\uD83D\uDCCB Clipboard"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- Category filter chips -->
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:scrollbars="none"
+            android:paddingStart="8dp">
+
+            <LinearLayout
+                android:id="@+id/clip_category_chips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+
+        </HorizontalScrollView>
+
+        <TextView
+            android:id="@+id/btn_clip_clear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Clear"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp"
+            android:paddingHorizontal="8dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+    </LinearLayout>
+
+    <!-- Clip items list (scrollable) -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fadingEdge="vertical"
+        android:fadingEdgeLength="16dp">
+
+        <LinearLayout
+            android:id="@+id/clip_items_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+    </ScrollView>
+
+    <!-- Bottom: close button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:gravity="end|center_vertical"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/btn_clip_close"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Close"
+            android:textColor="@color/accent_blue"
+            android:textSize="13sp"
+            android:paddingHorizontal="16dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+    </LinearLayout>
+
+</LinearLayout>

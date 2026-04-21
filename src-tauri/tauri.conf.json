@@ -27,6 +27,22 @@
         "focus": false
       },
       {
+        "label": "pill",
+        "title": "",
+        "width": 280,
+        "height": 36,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": false,
+        "visible": false,
+        "focus": false,
+        "url": "pill.html"
+      },
+      {
         "label": "loader",
         "title": "",
         "width": 220,
@@ -44,18 +60,39 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com https://prompter-proxy.onrender.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
+      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com https://snaptext-worker.snaptext-ai.workers.dev; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "msi"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIwN0JENENDMEVDREVGQjIKUldTeTc4ME96TlI3c0t2akhBY2NQRGx3V0tqNDErelQvaGxZRU5BdUpvajAvR3JqWTVJdVQwMHUK",
+      "endpoints": [
+        "https://github.com/Nicksingh-16/snaptext/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "windows": {
+        "installerArgs": []
+      }
+    }
   }
 }

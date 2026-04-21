@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SnapText dark theme — modern, vibrant, Gen-Z friendly -->
+    <color name="bg_primary">#FF0C0C14</color>
+    <color name="bg_secondary">#FF16162A</color>
+    <color name="bg_keyboard">#FF12121E</color>
+    <color name="bg_key">#FF252538</color>
+    <color name="bg_key_pressed">#FF6C5CE7</color>
+    <color name="bg_key_special">#FF1C1C30</color>
+
+    <!-- Accent gradient endpoints (used programmatically) -->
+    <color name="accent_blue">#FF6C5CE7</color>
+    <color name="accent_blue_dim">#666C5CE7</color>
+    <color name="accent_violet">#FFA855F7</color>
+    <color name="accent_green">#FF34D399</color>
+    <color name="accent_orange">#FFFBBF24</color>
+    <color name="accent_red">#FFEF4444</color>
+    <color name="accent_purple">#FFA855F7</color>
+    <color name="accent_pink">#FFF472B6</color>
+    <color name="accent_cyan">#FF22D3EE</color>
+
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FFB0B0CC</color>
+    <color name="text_muted">#FF6B6B8A</color>
+    <color name="text_key">#FFFFFFFF</color>
+
+    <color name="border">#FF2A2A40</color>
+    <color name="divider">#FF1F1F35</color>
+
+    <!-- Mode chip colors — each mode gets its own vibe -->
+    <color name="mode_reply">#FF6C5CE7</color>
+    <color name="mode_correct">#FF34D399</color>
+    <color name="mode_professional">#FFA855F7</color>
+    <color name="mode_prompt">#FFFBBF24</color>
+    <color name="mode_translate">#FFF472B6</color>
+    <color name="mode_email">#FF22D3EE</color>
+    <color name="mode_casual">#FFFB923C</color>
+    <color name="mode_summarize">#FF2DD4BF</color>
+
+    <!-- AI bar -->
+    <color name="ai_bar_bg">#FF18182E</color>
+    <color name="ai_glow_start">#FF6C5CE7</color>
+    <color name="ai_glow_end">#FFA855F7</color>
+
+    <!-- Space bar gradient -->
+    <color name="space_bar_bg">#FF1E1E36</color>
+
+    <!-- Tone Guard colors -->
+    <color name="tone_positive">#FF34D399</color>
+    <color name="tone_neutral">#FF6B6B8A</color>
+    <color name="tone_caution">#FFFBBF24</color>
+    <color name="tone_harsh">#FFEF4444</color>
+
+    <!-- Clipboard & Templates -->
+    <color name="clip_item_bg">#FF1E1E36</color>
+    <color name="clip_pin_active">#FFFBBF24</color>
+    <color name="tmpl_field_bg">#FF252538</color>
+
+    <!-- Smart Reply -->
+    <color name="smart_reply_bg">#FF1E1E36</color>
+    <color name="smart_reply_border">#FF3B3B5C</color>
+
+    <!-- Translate mode active -->
+    <color name="translate_active">#FF22D3EE</color>
+
+    <!-- Ghost Writer -->
+    <color name="mode_ghostwriter">#FFA78BFA</color>
+    <color name="mode_sayitbetter">#FF60A5FA</color>
+    <color name="mode_smartreply">#FFFB923C</color>
+</resources>
