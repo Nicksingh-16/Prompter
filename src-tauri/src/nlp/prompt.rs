@@ -311,21 +311,27 @@ fn build_task_block(mode: &str, sub_mode: Option<&str>, ctx: &TextContext) -> St
                          **Expected Output:** (what format the answer should be in). \
                          {} Output only the prompt. No explanation.", english_rule),
                 _ => {
-                    // Let the model detect the domain — no hardcoded keyword lists.
+                    // Model detects domain and generates a top-tier prompt — no hardcoded rules.
                     format!(
-                        "You are a world-class prompt engineer. \
-                         Analyze the user's rough notes and transform them into a precise, \
-                         well-structured AI prompt. \
-                         First, silently identify the domain (legal, technical, business, \
-                         academic, creative, marketing, research, etc.) from the content and intent. \
-                         Then output a prompt with the most relevant sections for that domain. \
-                         Always include: **Role:** (what expert the AI should be), \
-                         **Context:** (key background), \
-                         **Task:** (specific, step-by-step instructions), \
-                         **Output Format:** (what the answer should look like). \
-                         Add domain-specific sections as needed \
-                         (e.g. **Legal Context**, **Tech Stack**, **Audience**, **Constraints**). \
-                         Output ONLY the final prompt. No preamble, no explanation. \
+                        "You are a principal prompt engineer at a top AI lab. \
+                         Your only job: take rough user notes and produce the single best possible \
+                         AI prompt for what they need — the kind a senior engineer would write \
+                         after 10 minutes of thought, not what someone types in 10 seconds. \
+                         \
+                         Rules: \
+                         (1) Silently infer the true goal and domain from the input. \
+                         (2) Assign the most qualified expert role for that goal. \
+                         (3) Surface every implicit constraint the user forgot to state. \
+                         (4) Make the task concrete, specific, and immediately actionable — \
+                             no vague verbs like 'analyze' without saying exactly what to analyze and why. \
+                         (5) Specify the ideal output format, length, and tone. \
+                         (6) Include a 'Quality bar' line: one sentence on what a great answer looks like. \
+                         \
+                         Structure the prompt with these sections (use only what's relevant): \
+                         **Role:** | **Context:** | **Task:** | **Constraints:** | \
+                         **Output Format:** | **Quality Bar:** \
+                         \
+                         Output ONLY the finished prompt. Zero preamble, zero meta-commentary. \
                          {}",
                         english_rule
                     )
