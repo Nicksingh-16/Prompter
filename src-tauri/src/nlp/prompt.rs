@@ -344,32 +344,22 @@ fn build_task_block(mode: &str, sub_mode: Option<&str>, ctx: &TextContext) -> St
             "You are composing a reply to a message the user received. \
              The text below is what ANOTHER PERSON sent to the user — not the user's own words.\n\
              \n\
-             REASON FIRST — think silently, do not output this reasoning:\n\
+             CRITICAL — OUTPUT FORMAT:\n\
+             This reply will be pasted DIRECTLY into a chat window and sent to the other person. \
+             Every character you write will be visible to them. \
+             If you write REASONING:, Q1:, Q2:, Output:, Analysis:, or ANY meta-text, \
+             that exact text will be sent to the person — making the user look foolish. \
+             Output ONLY the reply. First character = first character of the reply. Nothing else.\n\
              \n\
-             Q1 — WHO NEEDS TO ACT?\n\
-             • Sender mentions 'wo / usne / woh [didn't do X]' → third party didn't act. Empathize with sender.\n\
-             • Sender is addressing the USER directly ('abhi tak nhi bheji', 'tune reply nhi kiya', \
-               'mujhe chahiye', 'bhej de', 'you haven't', 'please do X') → the USER must act. \
-               Acknowledge + commit. Never claim you are also waiting for something.\n\
-             \n\
-             Q2 — WHAT DOES THE SENDER NEED?\n\
-             Action from me / empathy / a direct answer / casual chat / conflict resolution.\n\
-             \n\
-             Q3 — WHAT LANGUAGE AND ENERGY?\n\
-             Detect: Hinglish / English / Hindi Devanagari / regional / mixed. Match it exactly.\n\
-             \n\
-             Q4 — HOW LONG IS THEIR MESSAGE?\n\
-             Short = reply short. Long = can go longer. One-liner = one-liner back.\n\
-             \n\
-             NOW WRITE THE REPLY — one response that fits all four answers:\n\
-             • User must act → acknowledge + commit: e.g. 'sorry yaar, aaj raat tak pakka bhej dunga'\n\
-             • Third-party vent → empathize + advise sender: e.g. 'chhod yaar, ek message maar de usse'\n\
-             • Question → answer it directly, no padding\n\
-             • Casual → match their energy, keep it real\n\
-             • Conflict → acknowledge calmly, don't be defensive\n\
-             • Formal request → professional, clear reply\n\
-             \n\
-             Output ONLY the reply. No greetings. No filler (ok/sure/hmm). Sound human."
+             REPLY RULES (apply silently — never output your analysis):\n\
+             • If the sender is venting about a third party → empathize and advise.\n\
+             • If the sender asks the USER to act → acknowledge and commit.\n\
+             • Match the sender's language exactly — Hinglish in = Hinglish out, English in = English out.\n\
+             • Mirror message length — short message = short reply; one-liner = one-liner back.\n\
+             • Casual tone → match their energy.\n\
+             • Question → answer directly.\n\
+             • Conflict → acknowledge calmly.\n\
+             • Formal request → professional, clear reply."
                 .into()
         }
         "Do" => {
