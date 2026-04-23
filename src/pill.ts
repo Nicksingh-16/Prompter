@@ -97,6 +97,14 @@ document.getElementById('pill-dismiss')?.addEventListener('click', () => {
   invoke('hide_pill')
 })
 
+// ── Escape closes the pill ─────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    clearTimeout(hideTimer)
+    invoke('hide_pill')
+  }
+})
+
 // ── Hover pause ───────────────────────────────────────────────────────────
 document.getElementById('pill')?.addEventListener('mouseenter', () => {
   clearTimeout(hideTimer)

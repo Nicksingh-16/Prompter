@@ -135,7 +135,9 @@ fn detect_natural_domain(text: &str) -> &'static str {
     let lower = text.to_lowercase();
     // Legal / compliance (high specificity — check first)
     if ["contract", "clause", "liability", "compliance", "regulation", "indemnif",
-        "warranty", "arbitration", "jurisdiction", "pursuant", "herein", "whereas"]
+        "warranty", "arbitration", "jurisdiction", "pursuant", "herein", "whereas",
+        "legal", "legally", "license", "licensing", "copyright", "intellectual property",
+        " ip ", "open source", "proprietary", "trademark", "patent", "royalt"]
         .iter().any(|w| lower.contains(w)) { return "legal"; }
     // Academic / research
     if ["hypothesis", "methodology", "literature review", "citation", "findings",
@@ -143,7 +145,7 @@ fn detect_natural_domain(text: &str) -> &'static str {
         .iter().any(|w| lower.contains(w)) { return "academic"; }
     // Marketing / sales
     if ["campaign", "conversion", "funnel", "audience", "revenue", "cta", "engagement",
-        "brand", "roi", "lead", "pipeline", "saas", "churn"]
+        "branding", "roi", "lead generation", "pipeline", "saas", "churn"]
         .iter().any(|w| lower.contains(w)) { return "marketing"; }
     // Creative / narrative
     if ["character", "story", "plot", "scene", "narrative", "dialogue", "protagonist",
