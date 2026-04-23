@@ -693,6 +693,30 @@ fn loader_hide_with_hint(handle: &AppHandle, success: bool, show_undo: bool) {
     });
 }
 
+// Show a user-readable error in the loader toast for 2.5s before hiding.
+fn loader_error(handle: &AppHandle, err: &str) {
+    let label = if err.contains("503") || err.contains("overload") || err.contains("busy") || err.contains("UNAVAILABLE") {
+        "Overloaded — open overlay (Alt+K)"
+    } else if err.contains("429") || err.contains("limit") {
+        "Daily limit reached"
+    } else if err.contains("401") || err.contains("Unauthorized") {
+        "Auth error — check settings"
+    } else if err.contains("timed out") || err.contains("timeout") {
+        "Timed out — try again"
+    } else {
+        "Failed — open overlay (Alt+K)"
+    };
+    handle.emit("loader_state", serde_json::json!({
+        "state": "error",
+        "label": label,
+    })).ok();
+    let h = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+        if let Some(w) = h.get_webview_window("loader") { let _ = w.hide(); }
+    });
+}
+
 // ── Clipboard-watch pill ──────────────────────────────────────────────────
 // Monitors clipboard via sequence number. Shows pill only on double-copy
 // (Ctrl+C twice within 1.5s). Positions near the text caret, not mouse.
@@ -1078,7 +1102,7 @@ fn pill_clicked(app: AppHandle, mode: String) {
                 }
             }
             Err(ref e) => {
-                loader_hide(&h, false);
+                loader_error(&h, e);
                 eprintln!("Pill transform failed (mode={}): {}", mode, e);
                 let secret = state.worker_secret.clone();
                 let device = state.device_id.clone();
