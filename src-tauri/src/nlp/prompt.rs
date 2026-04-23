@@ -135,9 +135,7 @@ fn detect_natural_domain(text: &str) -> &'static str {
     let lower = text.to_lowercase();
     // Legal / compliance (high specificity — check first)
     if ["contract", "clause", "liability", "compliance", "regulation", "indemnif",
-        "warranty", "arbitration", "jurisdiction", "pursuant", "herein", "whereas",
-        "legal", "legally", "license", "licensing", "copyright", "intellectual property",
-        " ip ", "open source", "proprietary", "trademark", "patent", "royalt"]
+        "warranty", "arbitration", "jurisdiction", "pursuant", "herein", "whereas"]
         .iter().any(|w| lower.contains(w)) { return "legal"; }
     // Academic / research
     if ["hypothesis", "methodology", "literature review", "citation", "findings",
@@ -145,7 +143,7 @@ fn detect_natural_domain(text: &str) -> &'static str {
         .iter().any(|w| lower.contains(w)) { return "academic"; }
     // Marketing / sales
     if ["campaign", "conversion", "funnel", "audience", "revenue", "cta", "engagement",
-        "branding", "roi", "lead generation", "pipeline", "saas", "churn"]
+        "brand", "roi", "lead", "pipeline", "saas", "churn"]
         .iter().any(|w| lower.contains(w)) { return "marketing"; }
     // Creative / narrative
     if ["character", "story", "plot", "scene", "narrative", "dialogue", "protagonist",
@@ -313,56 +311,24 @@ fn build_task_block(mode: &str, sub_mode: Option<&str>, ctx: &TextContext) -> St
                          **Expected Output:** (what format the answer should be in). \
                          {} Output only the prompt. No explanation.", english_rule),
                 _ => {
-                    let domain_instruction = match detect_natural_domain(&ctx.original) {
-                        "legal" =>
-                            "You are a senior legal-writing assistant. \
-                             Transform the input into a clear, structured legal or compliance prompt. \
-                             Sections: **Legal Context:** (jurisdiction/agreement type), \
-                             **Issue:** (what needs to be drafted or reviewed), \
-                             **Constraints:** (must-have clauses, governing law, tone). \
-                             Output only the prompt.",
-                        "academic" =>
-                            "You are a research-writing expert. \
-                             Transform the input into a rigorous academic prompt. \
-                             Sections: **Field:** (discipline/domain), \
-                             **Research Question:** (what to investigate), \
-                             **Methodology Hint:** (quantitative, qualitative, mixed), \
-                             **Output Format:** (essay, abstract, literature review, etc.). \
-                             Output only the prompt.",
-                        "marketing" =>
-                            "You are a senior growth marketer. \
-                             Transform the input into a high-converting marketing prompt. \
-                             Sections: **Product/Service:** (what is being promoted), \
-                             **Audience:** (who the reader is), \
-                             **Goal:** (awareness, conversion, retention), \
-                             **Tone:** (bold, professional, playful), \
-                             **Format:** (ad copy, email, landing page, post). \
-                             Output only the prompt.",
-                        "creative" =>
-                            "You are a creative writing coach. \
-                             Transform the input into a vivid creative-writing prompt. \
-                             Sections: **Genre/Tone:** (thriller, romance, literary fiction), \
-                             **Setting:** (time and place), \
-                             **Character/Conflict:** (who and what challenge), \
-                             **Task:** (write, continue, or rewrite the scene). \
-                             Output only the prompt.",
-                        "business" =>
-                            "You are an executive business strategist. \
-                             Transform the input into a structured business prompt. \
-                             Sections: **Objective:** (what outcome is needed), \
-                             **Stakeholders:** (who is involved), \
-                             **Constraints:** (timeline, budget, format), \
-                             **Expected Output:** (report, plan, email, slide deck). \
-                             Output only the prompt.",
-                        _ =>
-                            "You are an expert Prompt Engineer. \
-                             Transform the rough notes into a high-quality AI prompt. \
-                             Sections: **Role:** (who the AI should be), \
-                             **Context:** (background), **Task:** (what to do), \
-                             **Constraints:** (rules to follow). \
-                             Output only the enhanced prompt.",
-                    };
-                    format!("{} {}", domain_instruction, english_rule)
+                    // Let the model detect the domain — no hardcoded keyword lists.
+                    format!(
+                        "You are a world-class prompt engineer. \
+                         Analyze the user's rough notes and transform them into a precise, \
+                         well-structured AI prompt. \
+                         First, silently identify the domain (legal, technical, business, \
+                         academic, creative, marketing, research, etc.) from the content and intent. \
+                         Then output a prompt with the most relevant sections for that domain. \
+                         Always include: **Role:** (what expert the AI should be), \
+                         **Context:** (key background), \
+                         **Task:** (specific, step-by-step instructions), \
+                         **Output Format:** (what the answer should look like). \
+                         Add domain-specific sections as needed \
+                         (e.g. **Legal Context**, **Tech Stack**, **Audience**, **Constraints**). \
+                         Output ONLY the final prompt. No preamble, no explanation. \
+                         {}",
+                        english_rule
+                    )
                 },
             }
         }
