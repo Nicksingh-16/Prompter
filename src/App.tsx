@@ -681,7 +681,10 @@ function App() {
         setUpdateInfo(e.payload)
       }))
 
-      unlisteners.push(await listen<string>('ai_token', e => setStreamingResult(prev => prev + e.payload)))
+      unlisteners.push(await listen<string>('ai_token', e => {
+        setError('')  // clear interim error (e.g. BYOK fallback succeeded after 503)
+        setStreamingResult(prev => prev + e.payload)
+      }))
       unlisteners.push(await listen('ai_stream_end', () => {
         setIsGenerating(false)
         refreshUsage()
