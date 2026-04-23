@@ -1395,9 +1395,10 @@ pub fn run() {
                 .expect("Failed to resolve app data dir");
             let conn = db::init_db(&app_dir).expect("Failed to initialize database");
 
-            // Read or generate worker secret (migrates hardcoded value on first run)
+            // Secret embedded at compile time via APP_SECRET env var — never in source.
+            // Still rate-limited per device_id so extraction only gives 20 calls/day.
             let worker_secret = db::get_config(&conn, "app_secret").unwrap_or_else(|_| {
-                let default = "snptxt_v1_8f3a2c7e9d1b4506".to_string();
+                let default = env!("APP_SECRET").to_string();
                 let _ = db::set_config(&conn, "app_secret", &default);
                 default
             });
