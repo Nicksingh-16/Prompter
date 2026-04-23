@@ -19,7 +19,7 @@ pub fn mode_config(mode: &str) -> ModelConfig {
         "Summarize"             => ModelConfig { temperature: 0.3, max_tokens: 600,  thinking_budget: 0    },
         "Do" | "Reply"          => ModelConfig { temperature: 0.3, max_tokens: 1000, thinking_budget: 1024 },
         "Email"                 => ModelConfig { temperature: 0.3, max_tokens: 1200, thinking_budget: 1024 },
-        "Prompt"                => ModelConfig { temperature: 0.4, max_tokens: 800,  thinking_budget: 512  },
+        "Prompt"                => ModelConfig { temperature: 0.4, max_tokens: 2000, thinking_budget: 1024 },
         "Knowledge"             => ModelConfig { temperature: 0.5, max_tokens: 1500, thinking_budget: 2048 },
         "Strategist"            => ModelConfig { temperature: 0.5, max_tokens: 1200, thinking_budget: 1024 },
         "Casual"                => ModelConfig { temperature: 0.75,max_tokens: 600,  thinking_budget: 0    },
