@@ -164,35 +164,55 @@ export default {
                 }
             };
 
+            // Primary: gemini-2.0-flash (15 RPM free tier, stable).
+            // Upgrade: gemini-2.5-flash if explicitly requested and keys allow.
+            // This order prevents the 5 RPM experimental limit on 2.5 Flash from blocking all users.
+            const STABLE_MODEL = "gemini-2.0-flash";
+            const modelsToTry = model === "gemini-2.5-flash"
+                ? [STABLE_MODEL, model]   // try stable first, 2.5 as bonus
+                : [model, STABLE_MODEL];  // explicit model request respected, stable as fallback
+
             let lastError = null;
-            for (const key of shuffledKeys) {
-                const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${stream ? "streamGenerateContent" : "generateContent"}?key=${key}${stream ? "&alt=sse" : ""}`;
-                const res = await fetch(geminiUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(geminiBody)
-                });
+            for (const tryModel of modelsToTry) {
+                // Gemini 2.0 Flash does not support thinkingConfig — strip it to avoid 400.
+                const bodyForModel = tryModel.includes("2.0")
+                    ? { ...geminiBody, generationConfig: { ...geminiBody.generationConfig, thinkingConfig: { thinkingBudget: 0 } } }
+                    : geminiBody;
 
-                if (res.ok) {
-                    // Increment usage counter
-                    if (env.DB) {
-                        await incrementUsageD1(env.DB, deviceId, date);
-                    } else {
-                        await env.USAGE.put(`usage:${deviceId}:${date}`, (used + 1).toString(), { expirationTtl: 86400 });
+                let nonRetryable = false;
+                for (const key of shuffledKeys) {
+                    const endpoint = stream ? "streamGenerateContent" : "generateContent";
+                    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${tryModel}:${endpoint}?key=${key}${stream ? "&alt=sse" : ""}`;
+                    const res = await fetch(geminiUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(bodyForModel)
+                    });
+
+                    if (res.ok) {
+                        // Increment usage counter
+                        if (env.DB) {
+                            await incrementUsageD1(env.DB, deviceId, date);
+                        } else {
+                            await env.USAGE.put(`usage:${deviceId}:${date}`, (used + 1).toString(), { expirationTtl: 86400 });
+                        }
+                        const merged = new Headers(res.headers);
+                        for (const [k, v] of Object.entries(CORS_HEADERS)) merged.set(k, v);
+                        return new Response(res.body, { status: res.status, headers: merged });
                     }
-                    const merged = new Headers(res.headers);
-                    for (const [k, v] of Object.entries(CORS_HEADERS)) merged.set(k, v);
-                    return new Response(res.body, { status: res.status, headers: merged });
-                }
 
-                const errStatus = res.status;
-                const errText = await res.text();
-                lastError = { status: errStatus, body: errText };
-                if (errStatus === 429) {
-                    console.log(`Key ${key.substring(0, 6)}... rate limited. Retrying...`);
-                    continue;
+                    const errStatus = res.status;
+                    const errText = await res.text();
+                    lastError = { status: errStatus, body: errText };
+                    if (errStatus === 429 || errStatus === 503) {
+                        console.log(`Key ${key.substring(0, 6)}... got ${errStatus} on ${tryModel}. Trying next...`);
+                        continue;
+                    }
+                    nonRetryable = true;
+                    break; // Hard error (401, 400, etc.) — don't try other keys or models
                 }
-                break;
+                if (nonRetryable) break;
+                // All keys transient-failed on this model — try fallback model if available
             }
 
             const displayError = lastError

@@ -242,13 +242,21 @@ fn build_task_block(mode: &str, sub_mode: Option<&str>, ctx: &TextContext) -> St
             // Alt+Shift+L: rewrite ANY language (Hinglish, broken English, Hindi, etc.)
             // into clear, fluent, professional English. This is the core use case.
             "You are a professional English rewriter. \
-             Rewrite the following text into clear, fluent, professional English. \
-             If the input is in Hinglish, Hindi, broken English, or any other language — \
-             output clean English only. \
-             Preserve the original meaning and intent exactly. \
-             Fix grammar, spelling, and structure. \
+             Your task: produce clear, fluent, professional English. \
+             \n\
+             RULE 1 — ONLY FIX WHAT IS BROKEN: \
+             If the input is already clear, grammatically correct English, return it UNCHANGED. \
+             Do not paraphrase, do not rephrase, do not 'improve' what is already good. \
+             The test: would a native English speaker reading it find any error? \
+             If no — return it as-is. \
+             \n\
+             RULE 2 — IF BROKEN, FIX COMPLETELY: \
+             If the input has errors, non-English words, Hinglish, Hindi, or broken grammar — \
+             rewrite into clean English. Preserve the original meaning and intent exactly. \
+             Fix grammar, spelling, word choice, and structure. \
              Do not add information. Do not change the tone unless it is rude — then make it polite. \
-             Output only the rewritten English text. Nothing else."
+             \n\
+             Output only the (corrected or unchanged) English text. Nothing else."
                 .into()
         }
         "Translate" => {
@@ -359,88 +367,120 @@ fn build_task_block(mode: &str, sub_mode: Option<&str>, ctx: &TextContext) -> St
         "Reply" => {
             // The user selected a message someone sent THEM.
             // SnapText composes a REPLY to that message.
-            "You are replying to a message the user received. \
-             The input is the OTHER PERSON'S message — not an instruction from the user. \
-             Your job: write a meaningful, context-aware reply the user can send back.\n\
+            "You are composing a reply to a message the user received. \
+             The text below is what ANOTHER PERSON sent to the user — not the user's own words.\n\
              \n\
-             STEP 1 — READ THE MESSAGE DEEPLY:\n\
-             • What is the person actually saying or implying?\n\
-             • What is the emotional tone: agreement, disagreement, complaint, question, banter, conflict, frustration, affection, sarcasm?\n\
-             • Is it about a third party (someone else not responding, doing something, etc.)?\n\
-             • Is it a short casual message or a longer serious one?\n\
+             REASON FIRST — think silently, do not output this reasoning:\n\
              \n\
-             STEP 2 — DETECT LANGUAGE AND SCRIPT:\n\
-             • Hinglish (Hindi in Roman script) → reply in Hinglish\n\
-             • Gujarati in Roman script (tmne, amna, che, nathi, gamto, etc.) → reply in Gujarati Roman script\n\
-             • Hindi Devanagari → reply in Hindi Devanagari\n\
-             • English → reply in English\n\
-             • Mixed → match the same mix\n\
-             NEVER reply in a different language than the message.\n\
+             Q1 — WHO NEEDS TO ACT?\n\
+             • Sender mentions 'wo / usne / woh [didn't do X]' → third party didn't act. Empathize with sender.\n\
+             • Sender is addressing the USER directly ('abhi tak nhi bheji', 'tune reply nhi kiya', \
+               'mujhe chahiye', 'bhej de', 'you haven't', 'please do X') → the USER must act. \
+               Acknowledge + commit. Never claim you are also waiting for something.\n\
              \n\
-             STEP 3 — CRAFT A REAL REPLY based on the tone:\n\
-             • FRUSTRATION / VENTING about a third party (e.g. 'wo call nhi utha rha', 'wo aa nhi rha', 'usne reply nhi kiya') → \
-               address the SENDER's frustration — empathize, then suggest what THEY should do next. \
-               NEVER say 'main try karta hoon' or offer to do something yourself unless explicitly asked. \
-               Example input: 'are wo mera call nhi utha rha he' → \
-               Example reply: 'chhod yaar, shayad busy hoga. ek message maar de usse'\n\
-             • VENTING where person is upset (e.g. 'kyu nhi utha rha', 'kya problem hai usse') → \
-               validate the frustration, stay on THEIR side. \
-               Example reply: 'haan yaar irritating hai — message kar ke bol urgent hai'\n\
-             • DISAGREEMENT / CONFLICT → acknowledge the difference naturally, don't be dismissive\n\
-             • QUESTION → answer it directly\n\
-             • COMPLAINT → empathize and suggest a solution\n\
-             • BANTER / CASUAL → keep it light and natural\n\
-             • FORMAL REQUEST → professional reply\n\
+             Q2 — WHAT DOES THE SENDER NEED?\n\
+             Action from me / empathy / a direct answer / casual chat / conflict resolution.\n\
              \n\
-             STRICT OUTPUT RULES:\n\
-             • NEVER start with a greeting ('hello', 'hi', 'hey', 'haan', 'hii') — this is a reply, not a new conversation\n\
-             • NEVER say 'main try karta hoon' or commit to doing something unless the message explicitly asks you to act\n\
-             • Do NOT output filler: 'ok', 'ok bhai', 'sure', 'hm', 'hmm'\n\
-             • Do NOT explain what you did. Do NOT add labels or subject lines.\n\
-             • Keep the reply concise and ready to send.\n\
-             Output ONLY the reply text itself."
+             Q3 — WHAT LANGUAGE AND ENERGY?\n\
+             Detect: Hinglish / English / Hindi Devanagari / regional / mixed. Match it exactly.\n\
+             \n\
+             Q4 — HOW LONG IS THEIR MESSAGE?\n\
+             Short = reply short. Long = can go longer. One-liner = one-liner back.\n\
+             \n\
+             NOW WRITE THE REPLY — one response that fits all four answers:\n\
+             • User must act → acknowledge + commit: e.g. 'sorry yaar, aaj raat tak pakka bhej dunga'\n\
+             • Third-party vent → empathize + advise sender: e.g. 'chhod yaar, ek message maar de usse'\n\
+             • Question → answer it directly, no padding\n\
+             • Casual → match their energy, keep it real\n\
+             • Conflict → acknowledge calmly, don't be defensive\n\
+             • Formal request → professional, clear reply\n\
+             \n\
+             Output ONLY the reply. No greetings. No filler (ok/sure/hmm). Sound human."
                 .into()
         }
         "Do" => {
             // The user wrote an INSTRUCTION or notes describing what they want done.
             // SnapText executes the instruction — write the message, make the list, etc.
-            "You are an expert content creator and writing assistant. \
-             The input is a rough instruction — possibly in Hinglish, Hindi, or broken English — \
-             describing what the user wants to PRODUCE.\n\
-             \n\
-             Before writing anything, reason through two questions silently:\n\
-             \n\
-             QUESTION 1 — WHAT IS THIS TRYING TO ACHIEVE?\n\
-             Not 'what type of document is this' — but what should happen in the reader's mind \
-             after they read it? Should they want to invest? Reply to the email? Know what to do today? \
-             Feel something? Understand a concept? The goal determines everything.\n\
-             \n\
-             QUESTION 2 — WHAT SEPARATES EXCELLENT FROM MEDIOCRE FOR THIS SPECIFIC CONTENT?\n\
-             Use your world knowledge. You already know:\n\
-             • A great pitch makes someone lean forward — mediocre pitch lists features\n\
-             • A great email gets a reply — mediocre email gets ignored\n\
-             • A great task list is instantly actionable — mediocre list is vague\n\
-             • A great bio makes someone want to meet you — mediocre bio reads like a resume\n\
-             • A great poem creates emotion — mediocre poem just rhymes\n\
-             • A great product description sells the outcome, not the specs\n\
-             Apply this reasoning to ANY content type — poem, negotiation script, wedding speech, \
-             legal notice, Twitter thread, product roadmap, haiku, cold email, grant proposal — \
-             whatever it is, produce it at the quality bar of someone who does this professionally.\n\
-             \n\
-             THE ONE FAILURE MODE TO AVOID:\n\
+            //
+            // Domain routing: give the model a specialist frame for known content types,
+            // then fall back to the meta-reasoning framing for everything else.
+            let dev_type = detect_dev_input_type(&ctx.original);
+            let domain   = detect_natural_domain(&ctx.original);
+
+            let specialist_frame: &str = match (dev_type, domain) {
+                // Developer content
+                ("code", _) =>
+                    "You are a senior software engineer producing developer documentation, \
+                     PR descriptions, commit messages, or code review comments. \
+                     Be precise, reference the code specifics, use correct technical terminology. \
+                     Format with markdown where appropriate.",
+                ("error", _) =>
+                    "You are a senior developer writing an escalation, bug report, or Slack message \
+                     about a technical issue. Be specific about what broke, what you tried, and what you need. \
+                     Do not be vague — include the actual error context.",
+                ("sql", _) =>
+                    "You are a data engineer writing documentation, a query explanation, or a data \
+                     request. Be precise about table names, filters, and expected output.",
+                // Professional content
+                (_, "legal") =>
+                    "You are a senior legal writer. Legal notices and formal legal correspondence \
+                     must include: (1) the precise claim or demand, (2) the legal basis, \
+                     (3) a clear cure/response deadline, (4) consequence of non-compliance. \
+                     Use formal register. Avoid ambiguity — every sentence must have a clear meaning.",
+                (_, "academic") =>
+                    "You are a research writer. Academic writing must be precise, cite logic not \
+                     opinion, use passive voice where conventional, and be structured: \
+                     Introduction → Argument → Evidence → Conclusion.",
+                (_, "marketing") =>
+                    "You are a senior copywriter. Great marketing copy: leads with the benefit not \
+                     the feature, speaks directly to the reader's desire or pain, has a clear CTA, \
+                     and creates urgency without being pushy. Every word earns its place.",
+                (_, "creative") =>
+                    "You are a professional writer. Great creative writing: shows, doesn't tell; \
+                     uses specific concrete details not vague adjectives; has a distinct voice; \
+                     creates emotion through situation, not description.",
+                (_, "business") =>
+                    "You are a senior business communicator. Business writing must be clear on: \
+                     (1) the decision or action being requested, (2) the business rationale in one sentence, \
+                     (3) next steps with owners. Cut filler — every sentence must add information.",
+                // Default: meta-reasoning fallback
+                _ => "",
+            };
+
+            let meta_reasoning = "Apply the quality bar of a professional: \
+             great pitches make someone lean forward, great emails get replies, \
+             great task lists are instantly actionable, great bios make someone want to meet you. \
+             For task lists specifically: take the user's rough keywords and expand each into a clear, \
+             actionable task — add the implied action verb, clarify scope, and where obvious add a brief \
+             sub-note (e.g. 'HRMS Implementation — configure modules, map employee data, test onboarding flow'). \
+             Identify what the content must achieve and write to that bar. \
+             Never output your reasoning — only the finished result.";
+
+            let output_rules = "THE ONE FAILURE MODE TO AVOID:\n\
              Summarizing or reformatting the user's input. \
-             The user gave you RAW MATERIAL — rough notes, bullet points, a Hinglish description. \
-             Your job is to TRANSFORM it into finished content that achieves its goal. \
-             If you find yourself repeating back what they said in cleaner words, stop — that is not the job.\n\
+             The user gave you RAW MATERIAL. Your job is to TRANSFORM it into finished content. \
+             If you find yourself repeating back what they said in cleaner words — stop.\n\
              \n\
              OUTPUT RULES:\n\
-             • Output ONLY the finished result. No preamble, no 'Sure', no 'Here is your pitch'.\n\
+             • Output ONLY the finished result. Start DIRECTLY with the content — zero preamble. \
+               No 'Sure', no 'Here is your X', no 'Are bhai', no 'Great!', no 'Of course', \
+               no conversational opener of any kind. The very first character must be part of the deliverable.\n\
              • Do NOT echo or explain the instruction.\n\
-             • LANGUAGE: infer what the audience expects — \
-               'boss/manager/client/investor/office/bhej' → professional English; \
-               explicit cue ('Hindi mein', 'Hinglish mein') → use that; \
-               no cue → fluent English."
-                .into()
+             • LANGUAGE: The input is the user's INSTRUCTION to you — its language is irrelevant to the output language. \
+               Default is always fluent English. \
+               Only switch if the user explicitly requests it ('Hindi mein likho', 'Hinglish mein', 'in French', etc.). \
+               Hinglish input = English output unless told otherwise.";
+
+            if specialist_frame.is_empty() {
+                format!("You are an expert content creator and writing assistant. \
+                         The input is a rough instruction describing what the user wants to PRODUCE.\n\n\
+                         {}\n\n{}", meta_reasoning, output_rules)
+            } else {
+                format!("You are an expert content creator and writing assistant. \
+                         The input is a rough instruction describing what the user wants to PRODUCE.\n\n\
+                         SPECIALIST FRAME FOR THIS CONTENT TYPE:\n{}\n\n\
+                         GENERAL QUALITY STANDARD:\n{}\n\n{}", specialist_frame, meta_reasoning, output_rules)
+            }
         }
         "Casual" => {
             "Rewrite this text in a natural, conversational tone. \

@@ -89,13 +89,18 @@ use std::sync::OnceLock;
 
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
+pub fn make_client_pub() -> Client { make_client() }
+
 fn make_client() -> Client {
     HTTP_CLIENT.get_or_init(|| {
         Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .pool_max_idle_per_host(4)
             .build()
-            .expect("Failed to build HTTP client — TLS/system error")
+            .unwrap_or_else(|e| {
+                log::warn!("HTTP client TLS init failed ({}), falling back to default client", e);
+                Client::new()
+            })
     }).clone()
 }
 
@@ -127,7 +132,15 @@ pub async fn generate_stream(
             generate_direct_gemini(app, user_api_key, system_prompt, user_text, config).await
         },
         AiMode::Worker => {
-            generate_worker_stream(app, system_prompt, user_text, config, worker_secret, device_id).await
+            let result = generate_worker_stream(app.clone(), system_prompt, user_text, config, worker_secret, device_id).await;
+            // If worker is overloaded and user has a BYOK key, fall back silently to direct Gemini
+            if let Err(ref e) = result {
+                if !user_api_key.is_empty() && (e.contains("503") || e.contains("UNAVAILABLE") || e.contains("high demand")) {
+                    app.emit("ai_error", "Gemini busy — retrying with your API key…").ok();
+                    return generate_direct_gemini(app, user_api_key, system_prompt, user_text, config).await;
+                }
+            }
+            result
         }
     }
 }
@@ -162,8 +175,14 @@ async fn generate_worker_stream(
     if !response.status().is_success() {
         let status = response.status();
         let text   = response.text().await.unwrap_or_default();
-        let msg = format!("Worker error {}: {}", status, text);
-        app.emit("ai_error", &msg).ok();
+        let msg = if status.as_u16() == 503 || text.contains("UNAVAILABLE") || text.contains("high demand") {
+            // Don't emit here — caller decides whether to fall back to BYOK or surface to user
+            format!("Worker error {}: {}", status, text)
+        } else {
+            let m = format!("Worker error {}: {}", status, text);
+            app.emit("ai_error", &m).ok();
+            m
+        };
         return Err(msg);
     }
 
@@ -178,25 +197,37 @@ async fn generate_direct_gemini(
     config: &ModelConfig,
 ) -> Result<String, String> {
     let client = make_client();
-    let model  = "gemini-2.5-flash";
-    let body = serde_json::json!({
-        "systemInstruction": { "parts": [{ "text": system_prompt }] },
-        "contents": [{ "role": "user", "parts": [{ "text": user_text }] }],
-        "generationConfig": {
-            "temperature": config.temperature,
-            "maxOutputTokens": config.max_tokens,
-            "thinkingConfig": { "thinkingBudget": config.thinking_budget }
+    // Try stable 2.0 first (15 RPM free tier), fall back to 2.5 on transient errors.
+    // gemini-2.0-flash does not support thinkingConfig — strip it to avoid 400.
+    let models = ["gemini-2.0-flash", "gemini-2.5-flash"];
+    let mut last_err = String::from("No models available");
+
+    for model in models {
+        let thinking_budget = if model.contains("2.0") { 0 } else { config.thinking_budget };
+        let body = serde_json::json!({
+            "systemInstruction": { "parts": [{ "text": system_prompt }] },
+            "contents": [{ "role": "user", "parts": [{ "text": user_text }] }],
+            "generationConfig": {
+                "temperature": config.temperature,
+                "maxOutputTokens": config.max_tokens,
+                "thinkingConfig": { "thinkingBudget": thinking_budget }
+            }
+        });
+        let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse", model);
+        let response = match client.post(&url).header("x-goog-api-key", key).json(&body).send().await {
+            Ok(r) => r,
+            Err(e) => { last_err = e.to_string(); continue; }
+        };
+        if response.status().is_success() {
+            return handle_stream_response(app, response).await;
         }
-    });
-
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse", model);
-    let response = client.post(url).header("x-goog-api-key", key).json(&body).send().await.map_err(|e| e.to_string())?;
-
-    if !response.status().is_success() {
-        return Err(format!("Gemini API error: {}", response.status()));
+        let status = response.status().as_u16();
+        last_err = format!("Gemini API error {}", status);
+        if status == 429 || status == 503 { continue; }
+        break;
     }
 
-    handle_stream_response(app, response).await
+    Err(last_err)
 }
 
 async fn handle_stream_response(app: AppHandle, response: reqwest::Response) -> Result<String, String> {
@@ -208,24 +239,25 @@ async fn handle_stream_response(app: AppHandle, response: reqwest::Response) -> 
         let chunk = item.map_err(|e| format!("Stream error: {}", e))?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-        let lines: Vec<&str> = buffer.lines().collect();
-        let mut consumed = 0;
-        for line in &lines {
+        // Only consume up to the last newline — keep any trailing partial line in the buffer.
+        let last_nl = buffer.rfind('\n').map(|i| i + 1).unwrap_or(0);
+        if last_nl == 0 { continue; }
+        let complete = buffer[..last_nl].to_string();
+        buffer = buffer[last_nl..].to_string();
+
+        for line in complete.lines() {
             if line.starts_with("data: ") {
                 let json_str = &line[6..];
-                if json_str == "[DONE]" { consumed += 1; continue; }
+                if json_str == "[DONE]" { continue; }
                 if let Ok(resp) = serde_json::from_str::<GeminiStreamResponse>(json_str) {
                     for token in extract_tokens(&resp) {
                         full_output.push_str(&token);
                         app.emit("ai_token", &token).ok();
                     }
                 }
-                consumed += 1;
-            } else if line.is_empty() {
-                consumed += 1;
-            } else { break; }
+            }
+            // empty lines and SSE comment/control lines are skipped silently
         }
-        if consumed > 0 { buffer = lines[consumed..].join("\n"); }
     }
     app.emit("ai_stream_end", ()).ok();
     Ok(full_output)
@@ -325,29 +357,41 @@ async fn generate_direct_gemini_silent(
     config: &ModelConfig,
 ) -> Result<String, String> {
     let client = make_client();
-    let body = serde_json::json!({
-        "systemInstruction": { "parts": [{ "text": system_prompt }] },
-        "contents": [{ "role": "user", "parts": [{ "text": user_text }] }],
-        "generationConfig": {
-            "temperature": config.temperature,
-            "maxOutputTokens": config.max_tokens,
-            "thinkingConfig": { "thinkingBudget": config.thinking_budget }
+    let models = ["gemini-2.0-flash", "gemini-2.5-flash"];
+    let mut last_err = String::from("No models available");
+
+    for model in models {
+        let thinking_budget = if model.contains("2.0") { 0 } else { config.thinking_budget };
+        let body = serde_json::json!({
+            "systemInstruction": { "parts": [{ "text": system_prompt }] },
+            "contents": [{ "role": "user", "parts": [{ "text": user_text }] }],
+            "generationConfig": {
+                "temperature": config.temperature,
+                "maxOutputTokens": config.max_tokens,
+                "thinkingConfig": { "thinkingBudget": thinking_budget }
+            }
+        });
+        let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent", model);
+        let response = match client.post(&url).header("x-goog-api-key", key).json(&body).send().await {
+            Ok(r) => r,
+            Err(e) => { last_err = e.to_string(); continue; }
+        };
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            last_err = format!("Gemini API error {}", status);
+            if status == 429 || status == 503 { continue; }
+            break;
         }
-    });
-    let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
-    let response = client.post(url).header("x-goog-api-key", key).json(&body).send().await.map_err(|e| e.to_string())?;
-    
-    if !response.status().is_success() {
-        return Err(format!("Gemini API error: {}", response.status()));
+        let data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+        let text = data["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or("").to_string();
+        if text.trim().is_empty() {
+            let finish = data["candidates"][0]["finishReason"].as_str().unwrap_or("UNKNOWN");
+            return Err(format!("Empty response from model (finish: {})", finish));
+        }
+        return Ok(text);
     }
-    
-    let data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    let text = data["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or("").to_string();
-    if text.trim().is_empty() {
-        let finish = data["candidates"][0]["finishReason"].as_str().unwrap_or("UNKNOWN");
-        return Err(format!("Empty response from model (finish: {})", finish));
-    }
-    Ok(text)
+
+    Err(last_err)
 }
 
 fn parse_classifier_response(body: &str) -> Option<(String, f32, Vec<(String, f32)>)> {

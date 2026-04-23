@@ -121,6 +121,13 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState, Shortcut, M
 
 // ── App state ──────────────────────────────────────────────────────────────
 
+/// One-slot embedding cache: stores the embedding for the most recently captured text.
+/// Keyed by content hash so stale entries are never used.
+pub struct EmbeddingCache {
+    pub key:       String,
+    pub embedding: Vec<f32>,
+}
+
 pub struct AppState {
     pub db:                  Arc<Mutex<rusqlite::Connection>>,
     pub worker_secret:       String,
@@ -129,6 +136,8 @@ pub struct AppState {
     /// suggested_mode → preferred_mode overrides learned from user corrections.
     /// Keys and values are mode strings ("Email", "Reply", "Do", etc.).
     pub correction_overrides: std::sync::RwLock<std::collections::HashMap<String, String>>,
+    /// Pre-fetched embedding for the currently captured text (populated on text_captured).
+    pub embedding_cache:     Arc<Mutex<Option<EmbeddingCache>>>,
 }
 
 /// Safe UTF-8 truncation by character count, not bytes.
@@ -154,6 +163,8 @@ fn get_captured_text() -> String {
     capture::capture_text().unwrap_or_default()
 }
 
+const MAX_INPUT_CHARS: usize = 10_000;
+
 #[tauri::command]
 async fn generate_ai_response(
     state: State<'_, AppState>,
@@ -163,6 +174,16 @@ async fn generate_ai_response(
     custom_prompt: Option<String>,
     sub_mode: Option<String>,
 ) -> Result<(), String> {
+    let char_count = text.chars().count();
+    if char_count > MAX_INPUT_CHARS {
+        let msg = format!(
+            "Selection too long ({} characters). Please select fewer than {} characters at a time.",
+            char_count, MAX_INPUT_CHARS
+        );
+        app.emit("ai_error", &msg).ok();
+        return Err(msg);
+    }
+
     let ctx = nlp::analyze(&text);
 
     // Parse conversation thread for Reply mode (gives AI full context, not just last message).
@@ -219,8 +240,19 @@ async fn generate_ai_response(
     let use_semantic = matches!(mode.as_str(), "Reply" | "Email" | "Do");
     let rag_examples: Vec<(String, String)> = if !skip_personalization && !history_for_rag.is_empty() {
         if use_semantic {
-            // Try semantic RAG: fetch query embedding, score by cosine similarity
-            let query_emb = ai::fetch_embedding(&sanitized_query, &state.worker_secret, &state.device_id).await;
+            // Try semantic RAG: check the pre-fetched cache first (populated on text_captured),
+            // then fall back to a short live fetch, then to BM25.
+            let cache_key  = content_hash(&sanitized_query, "embed");
+            let cached_emb = state.embedding_cache.lock().ok()
+                .and_then(|c| c.as_ref().filter(|e| e.key == cache_key).map(|e| e.embedding.clone()));
+            let query_emb = if cached_emb.is_some() {
+                cached_emb
+            } else {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    ai::fetch_embedding(&sanitized_query, &state.worker_secret, &state.device_id),
+                ).await.ok().flatten()
+            };
             let has_stored = history_for_rag.iter().any(|(_, _, _, e)| e.is_some());
 
             if let (Some(qemb), true) = (query_emb, has_stored) {
@@ -272,113 +304,122 @@ async fn generate_ai_response(
     let res = ai::generate_stream(app.clone(), &api_key, &system_prompt, &text, mode_enum, &config, &state.worker_secret, &state.device_id).await;
 
     if let Ok(ref output) = res {
-        let conn = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
-        let preview  = safe_truncate(&text, 1000);
-        let out_str  = safe_truncate(output, 2000);
-        let hash     = content_hash(&preview, &mode);
-        let ai_mode_str = format!("{:?}", get_current_ai_mode(&state));
-
+        if output.trim().is_empty() {
+            app.emit("ai_error", "Empty response — Gemini returned nothing. Please try again.").ok();
+            return Ok(());
+        }
         use std::sync::atomic::Ordering;
-        let incognito = state.incognito.load(Ordering::Relaxed);
-        let sensitive = contains_sensitive_data(&text);
+        let incognito    = state.incognito.load(Ordering::Relaxed);
+        let sensitive    = contains_sensitive_data(&text);
         let should_store = !incognito && sensitive.is_none();
 
-        if should_store {
-            let _ = db::save_history(
-                &conn, &preview, &mode, &out_str,
-                ctx.tone, ctx.formality, None, Some(&hash),
-            );
-            let _ = db::observe_session_v2(
-                &conn, &text, ctx.tone, ctx.formality,
-                ctx.contraction_rate, ctx.avg_sentence_len, ctx.emoji_count,
-            );
-            // Extract per-contact opener/closer for relationship graph
-            let words: Vec<&str> = text.split_whitespace().collect();
-            let opener = words.first().map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase());
-            let closer  = words.last().map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase());
-            for (name, etype) in &ctx.detected_entities {
-                let _ = db::record_entity_mention(&conn, etype, name, ctx.tone, ctx.formality);
-                if let Some(ref op) = opener {
-                    if !op.is_empty() { let _ = db::record_contact_pattern(&conn, name, "opener", op); }
-                }
-                if let Some(ref cl) = closer {
-                    if !cl.is_empty() { let _ = db::record_contact_pattern(&conn, name, "closer", cl); }
-                }
-            }
-            if !ctx.language.candidate_languages.is_empty() {
-                for (name, _) in &ctx.detected_entities {
-                    let _ = db::record_contact_language(&conn, name, &ctx.language.candidate_languages);
-                }
-            }
-
-            // Spawn background task to fetch + store the embedding for this history entry.
-            // Best-effort: failures are silently ignored so they never block the main flow.
-            if use_semantic {
-                let row_id = db::get_last_history_id(&conn, &preview, &mode);
-                if let Some(id) = row_id {
-                    let db_arc      = state.db.clone();
-                    let secret      = state.worker_secret.clone();
-                    let device      = state.device_id.clone();
-                    let embed_text  = preview.clone();
-                    tauri::async_runtime::spawn(async move {
-                        match ai::fetch_embedding(&embed_text, &secret, &device).await {
-                            Some(emb) => {
-                                let bytes = embedding::vec_to_bytes(&emb);
-                                match db_arc.lock() {
-                                    Ok(conn) => {
-                                        if db::update_embedding(&conn, id, &bytes).is_err() {
-                                            log::warn!("embed: DB write failed for history id={}", id);
-                                        } else {
-                                            log::debug!("embed: stored {} dims for id={}", emb.len(), id);
-                                        }
-                                    }
-                                    Err(e) => log::warn!("embed: DB lock error: {}", e),
-                                }
-                            }
-                            None => log::warn!("embed: fetch failed for history id={}", id),
-                        }
-                    });
-                }
-            }
-        } else {
-            let reason = if incognito { "private mode" } else { sensitive.unwrap_or("sensitive data") };
-            app.emit("sensitive_data_detected", reason).ok();
+        // Emit sensitive data notice immediately — UI feedback before we detach
+        if !should_store && !incognito {
+            app.emit("sensitive_data_detected", sensitive.unwrap_or("sensitive data")).ok();
         }
 
-        let _ = db::save_audit_entry(&conn, &mode, &ai_mode_str, text.len(), should_store);
+        // Extract ctx scalars (all Copy) and collections before moving into spawn
+        let tone             = ctx.tone;
+        let formality        = ctx.formality;
+        let contraction_rate = ctx.contraction_rate;
+        let avg_sentence_len = ctx.avg_sentence_len;
+        let emoji_count      = ctx.emoji_count;
+        let detected_entities = ctx.detected_entities.clone();
+        let candidate_langs  = ctx.language.candidate_languages.clone();
+        let tele_ctx         = app_category.unwrap_or("unknown").to_string();
+        let output_bg        = output.clone();
+        let db_arc           = state.db.clone();
+        let secret           = state.worker_secret.clone();
+        let device           = state.device_id.clone();
 
-        // ── Anonymous telemetry: fire-and-forget, no text content ──
+        // Detach all post-generation DB work so the invoke resolves immediately.
+        // The user never waits for history/audit saving — it happens in the background.
+        tauri::async_runtime::spawn(async move {
+            let preview = safe_truncate(&text, 1000);
+            let out_str = safe_truncate(&output_bg, 2000);
+            let hash    = content_hash(&preview, &mode);
+
+            let row_id: Option<i64> = tokio::task::spawn_blocking({
+                let db_arc2  = db_arc.clone();
+                let preview2 = preview.clone();
+                let out_str2 = out_str.clone();
+                let hash2    = hash.clone();
+                let mode2    = mode.clone();
+                let text2    = text.clone();
+                move || -> Option<i64> {
+                    let conn = db_arc2.lock().ok()?;
+                    let ai_mode_str = db::get_config(&conn, "ai_mode").unwrap_or_else(|_| "Worker".into());
+                    if should_store {
+                        let _ = db::save_history(&conn, &preview2, &mode2, &out_str2, tone, formality, None, Some(&hash2));
+                        let _ = db::observe_session_v2(&conn, &text2, tone, formality, contraction_rate, avg_sentence_len, emoji_count);
+                        let words: Vec<&str> = text2.split_whitespace().collect();
+                        let opener = words.first().map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase());
+                        let closer  = words.last().map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase());
+                        for (name, etype) in &detected_entities {
+                            let _ = db::record_entity_mention(&conn, etype, name, tone, formality);
+                            if let Some(ref op) = opener { if !op.is_empty() { let _ = db::record_contact_pattern(&conn, name, "opener", op); } }
+                            if let Some(ref cl) = closer { if !cl.is_empty() { let _ = db::record_contact_pattern(&conn, name, "closer", cl); } }
+                        }
+                        if !candidate_langs.is_empty() {
+                            for (name, _) in &detected_entities {
+                                let _ = db::record_contact_language(&conn, name, &candidate_langs);
+                            }
+                        }
+                    }
+                    let _ = db::save_audit_entry(&conn, &mode2, &ai_mode_str, text2.len(), should_store);
+                    if should_store && use_semantic { db::get_last_history_id(&conn, &preview2, &mode2) } else { None }
+                }
+            }).await.ok().flatten();
+
+            // Fetch and store embedding for the new history entry
+            if let Some(id) = row_id {
+                if let Some(emb) = ai::fetch_embedding(&preview, &secret, &device).await {
+                    let bytes   = embedding::vec_to_bytes(&emb);
+                    let db_arc3 = db_arc.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if let Ok(conn) = db_arc3.lock() { let _ = db::update_embedding(&conn, id, &bytes); }
+                    }).await.ok();
+                }
+            }
+
+            if !incognito {
+                fire_telemetry(&secret, &device, serde_json::json!({
+                    "event": "transform",
+                    "mode": mode,
+                    "app_context": tele_ctx,
+                })).await;
+            }
+        });
+
+        return Ok(());
+    } else if let Err(ref e) = res {
+        app.emit("ai_error", e).ok();
+        // Error telemetry — mode + error class only, no user content.
         if !state.incognito.load(std::sync::atomic::Ordering::Relaxed) {
-            let secret    = state.worker_secret.clone();
-            let device    = state.device_id.clone();
-            let tele_mode = mode.clone();
-            let tele_ctx  = app_category.unwrap_or("unknown").to_string();
+            let secret     = state.worker_secret.clone();
+            let device     = state.device_id.clone();
+            let tele_mode  = mode.clone();
+            let error_type = classify_error(e);
             tauri::async_runtime::spawn(async move {
-                let client = reqwest::Client::new();
-                let _ = client
-                    .post("https://snaptext-worker.snaptext-ai.workers.dev/telemetry")
-                    .header("X-App-Secret", &secret)
-                    .header("X-Device-ID", &device)
-                    .header("Content-Type", "application/json")
-                    .json(&serde_json::json!({
-                        "event": "transform",
-                        "mode": tele_mode,
-                        "app_context": tele_ctx,
-                    }))
-                    .timeout(std::time::Duration::from_secs(5))
-                    .send()
-                    .await;
+                fire_telemetry(&secret, &device, serde_json::json!({
+                    "event": "error",
+                    "mode": tele_mode,
+                    "error_type": error_type,
+                })).await;
             });
         }
     }
 
-    res.map(|_| ())
+    Ok(())
 }
 
 #[tauri::command]
-fn get_voice_profile(state: State<'_, AppState>) -> Result<Vec<(String, String, String)>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    db::get_voice_profile(&db).map_err(|e| e.to_string())
+async fn get_voice_profile(state: State<'_, AppState>) -> Result<Vec<(String, String, String)>, String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        db::get_voice_profile(&db).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -405,51 +446,64 @@ fn get_current_ai_mode(state: &State<'_, AppState>) -> ai::AiMode {
 }
 
 #[tauri::command]
-fn get_ai_mode(state: State<'_, AppState>) -> String {
-    format!("{:?}", get_current_ai_mode(&state))
+async fn get_ai_mode(state: State<'_, AppState>) -> Result<String, ()> {
+    Ok(format!("{:?}", get_current_ai_mode(&state)))
 }
 
 #[tauri::command]
-fn set_ai_mode(state: State<'_, AppState>, mode: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    db::set_config(&conn, "ai_mode", &mode).map_err(|e| e.to_string())
+async fn set_ai_mode(state: State<'_, AppState>, mode: String) -> Result<(), String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_arc.lock().map_err(|e| e.to_string())?;
+        db::set_config(&conn, "ai_mode", &mode).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_hardware_stats() -> serde_json::Value {
-    // Basic stats for routing decisions
-    let mut sys = sysinfo::System::new_all();
-    sys.refresh_all();
-    serde_json::json!({
-        "ram_gb": sys.total_memory() / 1024 / 1024 / 1024,
-        "cpu_count": sys.cpus().len(),
-    })
+async fn get_hardware_stats() -> serde_json::Value {
+    // sysinfo::refresh_all() scans every process — run on blocking thread so it
+    // never stalls the async runtime or the Win32 main thread.
+    tokio::task::spawn_blocking(|| {
+        let mut sys = sysinfo::System::new_all();
+        sys.refresh_all();
+        serde_json::json!({
+            "ram_gb": sys.total_memory() / 1024 / 1024 / 1024,
+            "cpu_count": sys.cpus().len(),
+        })
+    }).await.unwrap_or_else(|_| serde_json::json!({ "ram_gb": 0, "cpu_count": 0 }))
 }
 
 #[tauri::command]
-fn store_api_key(state: State<'_, AppState>, key: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    keychain::store_api_key(&conn, &key)
+async fn store_api_key(state: State<'_, AppState>, key: String) -> Result<(), String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_arc.lock().map_err(|e| e.to_string())?;
+        keychain::store_api_key(&conn, &key)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn delete_api_key(state: State<'_, AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    keychain::delete_api_key(&conn)
+async fn delete_api_key(state: State<'_, AppState>) -> Result<(), String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_arc.lock().map_err(|e| e.to_string())?;
+        keychain::delete_api_key(&conn)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn has_api_key(state: State<'_, AppState>) -> bool {
-    let mode = get_current_ai_mode(&state);
-    if mode == ai::AiMode::Worker || mode == ai::AiMode::Local { return true; }
-    
-    // BYOK mode requires a real key
-    if let Ok(conn) = state.db.lock() {
-        if let Ok(key) = keychain::get_api_key(&conn) {
-            return !key.trim().is_empty();
-        }
-    }
-    false
+async fn has_api_key(state: State<'_, AppState>) -> Result<bool, ()> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || -> bool {
+        let conn = match db_arc.lock() { Ok(c) => c, Err(_) => return true };
+        let mode = match db::get_config(&conn, "ai_mode").unwrap_or_default().as_str() {
+            "Local" => ai::AiMode::Local,
+            "Byok"  => ai::AiMode::Byok,
+            _       => ai::AiMode::Worker,
+        };
+        if mode == ai::AiMode::Worker || mode == ai::AiMode::Local { return true; }
+        keychain::get_api_key(&conn).map(|k| !k.trim().is_empty()).unwrap_or(false)
+    }).await.map_err(|_| ())
 }
 
 #[tauri::command]
@@ -471,65 +525,82 @@ fn analyze_text(text: String) -> String {
 }
 
 #[tauri::command]
-fn record_intent_correction(
+async fn record_intent_correction(
     state: State<'_, AppState>,
     suggested_intent: String,
     chosen_intent: String,
     confidence: f32,
     text_length: usize,
 ) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
-    db::save_correction(&conn, &suggested_intent, &chosen_intent, confidence, text_length)
-        .map_err(|e| e.to_string())?;
+    let db_arc = state.db.clone();
+    let pairs = tokio::task::spawn_blocking(move || -> Result<Vec<(String, String)>, String> {
+        let conn = db_arc.lock().map_err(|e| e.to_string())?;
+        db::save_correction(&conn, &suggested_intent, &chosen_intent, confidence, text_length)
+            .map_err(|e| e.to_string())?;
+        db::get_top_corrections(&conn).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())??;
     // Refresh in-memory override map so correction takes effect this session
-    if let Ok(pairs) = db::get_top_corrections(&conn) {
-        if let Ok(mut overrides) = state.correction_overrides.write() {
-            overrides.clear();
-            for (suggested, chosen) in pairs {
-                overrides.insert(suggested, chosen);
-            }
+    if let Ok(mut overrides) = state.correction_overrides.write() {
+        overrides.clear();
+        for (suggested, chosen) in pairs.into_iter().take(50) {
+            overrides.insert(suggested, chosen);
         }
     }
     Ok(())
 }
 
 #[tauri::command]
-fn get_communication_score(state: State<'_, AppState>) -> Result<db::CommReport, String> {
-    let db = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
-    db::get_communication_report(&db).map_err(|e| e.to_string())
+async fn get_communication_score(state: State<'_, AppState>) -> Result<db::CommReport, String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        db::get_communication_report(&db).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_history(state: State<'_, AppState>, limit: i64) -> Result<Vec<db::HistoryEntry>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    db::get_recent_history(&db, limit).map_err(|e| e.to_string())
+async fn get_history(state: State<'_, AppState>, limit: i64) -> Result<Vec<db::HistoryEntry>, String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        db::get_recent_history(&db, limit).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn record_reply_feedback(
+async fn record_reply_feedback(
     state: State<'_, AppState>,
     input: String,
     ai_output: String,
     accepted: bool,
     contact_hint: Option<String>,
 ) -> Result<(), String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    let preview  = safe_truncate(&input, 500);
-    let out_snip = safe_truncate(&ai_output, 1000);
-    db::save_reply_feedback(&db, &preview, &out_snip, accepted, contact_hint.as_deref())
-        .map_err(|e| e.to_string())
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        let preview  = safe_truncate(&input, 500);
+        let out_snip = safe_truncate(&ai_output, 1000);
+        db::save_reply_feedback(&db, &preview, &out_snip, accepted, contact_hint.as_deref())
+            .map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_config_value(state: State<'_, AppState>, key: String) -> Result<String, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    db::get_config(&db, &key).map_err(|e| e.to_string())
+async fn get_config_value(state: State<'_, AppState>, key: String) -> Result<String, String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        db::get_config(&db, &key).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn set_config_value(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    db::set_config(&db, &key, &value).map_err(|e| e.to_string())
+async fn set_config_value(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        db::set_config(&db, &key, &value).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -538,9 +609,12 @@ fn get_device_id(state: State<'_, AppState>) -> String {
 }
 
 #[tauri::command]
-fn get_audit_log(state: State<'_, AppState>, limit: i64) -> Result<Vec<db::AuditEntry>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    db::get_audit_log(&db, limit).map_err(|e| e.to_string())
+async fn get_audit_log(state: State<'_, AppState>, limit: i64) -> Result<Vec<db::AuditEntry>, String> {
+    let db_arc = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let db = db_arc.lock().map_err(|e| e.to_string())?;
+        db::get_audit_log(&db, limit).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -596,23 +670,27 @@ fn loader_hide(handle: &AppHandle, success: bool) {
 }
 
 fn loader_hide_with_hint(handle: &AppHandle, success: bool, show_undo: bool) {
-    if let Some(w) = handle.get_webview_window("loader") {
-        let label = if !success {
-            "Failed"
-        } else if show_undo {
-            "Done · Ctrl+Z to undo"
-        } else {
-            "Done"
-        };
-        handle.emit("loader_state", serde_json::json!({
-            "state": if success { "done" } else { "error" },
-            "label": label,
-        })).ok();
-        // Longer pause when showing undo hint so user has time to read it
-        let pause = if show_undo { 2500 } else { 700 };
-        std::thread::sleep(std::time::Duration::from_millis(pause));
-        let _ = w.hide();
-    }
+    let label = if !success {
+        "Failed"
+    } else if show_undo {
+        "Done · Ctrl+Z to undo"
+    } else {
+        "Done"
+    };
+    handle.emit("loader_state", serde_json::json!({
+        "state": if success { "done" } else { "error" },
+        "label": label,
+    })).ok();
+    // Use a tokio task (not an OS thread) so the delay is non-blocking and
+    // Tauri window APIs are called from the async runtime — safe on Windows.
+    let pause = if show_undo { 2500u64 } else { 700 };
+    let h = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(pause)).await;
+        if let Some(w) = h.get_webview_window("loader") {
+            let _ = w.hide();
+        }
+    });
 }
 
 // ── Clipboard-watch pill ──────────────────────────────────────────────────
@@ -908,6 +986,7 @@ fn pill_clicked(app: AppHandle, mode: String) {
         cb.get_text().unwrap_or_default()
     };
     if text.trim().is_empty() { return; }
+    if text.chars().count() > MAX_INPUT_CHARS { return; }
 
     let h = app.clone();
     let mode = mode.clone();
@@ -943,8 +1022,23 @@ fn pill_clicked(app: AppHandle, mode: String) {
                     eprintln!("Pill transform returned empty (mode={})", mode);
                     return;
                 }
-                loader_hide_with_hint(&h, true, true);
-                inject::inject_text(result.clone());
+                // Show done state immediately, then sequence: wait → hide loader → wait → inject.
+                // This ordering is required: loader must be fully gone before Enigo sends Ctrl+V,
+                // otherwise WebView2 tries to open clipboard while arboard holds it → deadlock.
+                h.emit("loader_state", serde_json::json!({
+                    "state": "done",
+                    "label": "Done · Ctrl+Z to undo",
+                })).ok();
+                {
+                    let h2 = h.clone();
+                    let result_clone = result.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                        if let Some(w) = h2.get_webview_window("loader") { let _ = w.hide(); }
+                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        tokio::task::spawn_blocking(move || inject::inject_text(result_clone)).await.ok();
+                    });
+                }
                 use std::sync::atomic::Ordering;
                 let incognito = state.incognito.load(Ordering::Relaxed);
                 if !incognito && contains_sensitive_data(&text).is_none() {
@@ -983,9 +1077,18 @@ fn pill_clicked(app: AppHandle, mode: String) {
                     }
                 }
             }
-            Err(e) => {
+            Err(ref e) => {
                 loader_hide(&h, false);
                 eprintln!("Pill transform failed (mode={}): {}", mode, e);
+                let secret = state.worker_secret.clone();
+                let device = state.device_id.clone();
+                let err_type = classify_error(e);
+                let tele_mode = mode.clone();
+                tauri::async_runtime::spawn(async move {
+                    fire_telemetry(&secret, &device, serde_json::json!({
+                        "event": "error", "mode": tele_mode, "error_type": err_type,
+                    })).await;
+                });
             }
         }
     });
@@ -997,6 +1100,61 @@ fn hide_pill(app: AppHandle) {
         let _ = w.emit("pill_hide", ());
         let _ = w.hide();
     }
+}
+
+// ── Telemetry helpers ─────────────────────────────────────────────────────
+
+async fn fire_telemetry(secret: &str, device: &str, payload: serde_json::Value) {
+    let client = ai::make_client_pub();
+    let _ = client
+        .post("https://snaptext-worker.snaptext-ai.workers.dev/telemetry")
+        .header("X-App-Secret", secret)
+        .header("X-Device-ID", device)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await;
+}
+
+fn classify_error(e: &str) -> &'static str {
+    let lower = e.to_lowercase();
+    if lower.contains("timed out") || lower.contains("timeout")  { return "timeout"; }
+    if lower.contains("network") || lower.contains("connect")    { return "network"; }
+    if lower.contains("503") || lower.contains("unavailable")    { return "worker_overload"; }
+    if lower.contains("429") || lower.contains("rate")           { return "rate_limit"; }
+    if lower.contains("401") || lower.contains("403")            { return "auth"; }
+    if lower.contains("too long") || lower.contains("10,000")    { return "input_too_long"; }
+    if lower.contains("empty response")                          { return "empty_response"; }
+    "other"
+}
+
+// ── First-run demo trigger ────────────────────────────────────────────────
+// Called from JS after the first-run screen is dismissed.
+// Fires a text_captured event with a realistic sample message so the user
+// sees Reply mode produce a real output in their first 30 seconds.
+
+#[tauri::command]
+fn trigger_onboarding_demo(app: AppHandle) {
+    // Show window first, then emit after a brief delay so the React event
+    // listeners (listen('text_captured', ...)) are mounted and ready.
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.center();
+        let _ = window.show();
+        let _ = window.set_focus();
+        let _ = window.set_always_on_top(true);
+    }
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        let demo_text = "are yaar presentation abhi tak nhi bheji — kal deadline hai bhai";
+        let ctx = nlp::analyze(demo_text);
+        app.emit("text_captured", serde_json::json!({
+            "text":        demo_text,
+            "context":     ctx,
+            "forced_mode": "Reply",
+            "app_context": "messaging",
+        })).ok();
+    });
 }
 
 // ── Show overlay (Alt+K) ───────────────────────────────────────────────────
@@ -1056,6 +1214,25 @@ fn show_overlay(handle: &AppHandle) {
             }
         });
     }
+
+    // Pre-fetch embedding for the captured text so it is ready when Transform is pressed.
+    // Runs in background — generate_ai_response reads the cache instead of blocking.
+    {
+        let h2         = handle.clone();
+        let query      = nlp::prompt::sanitize(&captured);
+        let cache_key  = content_hash(&query, "embed");
+        tauri::async_runtime::spawn(async move {
+            let state = h2.state::<AppState>();
+            if let Some(emb) = tokio::time::timeout(
+                std::time::Duration::from_secs(8),
+                ai::fetch_embedding(&query, &state.worker_secret, &state.device_id),
+            ).await.ok().flatten() {
+                if let Ok(mut cache) = state.embedding_cache.lock() {
+                    *cache = Some(EmbeddingCache { key: cache_key, embedding: emb });
+                }
+            }
+        });
+    }
 }
 
 // ── Silent run (Alt+Shift+K / Alt+Shift+L) ────────────────────────────────
@@ -1071,7 +1248,13 @@ fn run_silent(handle: &AppHandle, mode: &str) {
         let text = capture::capture_text().unwrap_or_default();
         if text.trim().is_empty() { return; }
 
-        // 2. Show loader toast immediately so user knows something is happening
+        // 2. Guard: reject oversized selections before showing the loader.
+        if text.chars().count() > MAX_INPUT_CHARS {
+            eprintln!("Silent transform: input too long ({} chars), skipping", text.chars().count());
+            return;
+        }
+
+        // 3. Show loader toast immediately so user knows something is happening
         loader_show(&h, &mode);
 
         let ctx   = nlp::analyze(&text);
@@ -1101,9 +1284,22 @@ fn run_silent(handle: &AppHandle, mode: &str) {
         // 6. Generate silently
         match ai::generate_silent(&api_key, &system_prompt, &text, mode_enum, &state.worker_secret, &state.device_id).await {
             Ok(result) => {
-                // 7. Hide loader (shows ✓ Done · Ctrl+Z to undo for 2.5s), then inject
-                loader_hide_with_hint(&h, true, true);
-                inject::inject_text(result.clone());
+                // Show done state immediately, then sequence: wait → hide loader → wait → inject.
+                // Loader must be fully gone before Enigo sends Ctrl+V to avoid clipboard deadlock.
+                h.emit("loader_state", serde_json::json!({
+                    "state": "done",
+                    "label": "Done · Ctrl+Z to undo",
+                })).ok();
+                {
+                    let h2 = h.clone();
+                    let result_clone = result.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                        if let Some(w) = h2.get_webview_window("loader") { let _ = w.hide(); }
+                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        tokio::task::spawn_blocking(move || inject::inject_text(result_clone)).await.ok();
+                    });
+                }
 
                 // 8. Save history (skip if incognito or sensitive data)
                 use std::sync::atomic::Ordering;
@@ -1144,9 +1340,19 @@ fn run_silent(handle: &AppHandle, mode: &str) {
                     }
                 }
             }
-            Err(e) => {
+            Err(ref e) => {
                 loader_hide(&h, false);
                 eprintln!("Silent transform failed (mode={}): {}", mode, e);
+                let state2   = h.state::<AppState>();
+                let secret   = state2.worker_secret.clone();
+                let device   = state2.device_id.clone();
+                let err_type = classify_error(e);
+                let tele_mode = mode.clone();
+                tauri::async_runtime::spawn(async move {
+                    fire_telemetry(&secret, &device, serde_json::json!({
+                        "event": "error", "mode": tele_mode, "error_type": err_type,
+                    })).await;
+                });
             }
         }
     });
@@ -1225,6 +1431,7 @@ pub fn run() {
                 device_id,
                 incognito: std::sync::atomic::AtomicBool::new(false),
                 correction_overrides,
+                embedding_cache: Arc::new(Mutex::new(None)),
             });
 
             // ── Tray ────────────────────────────────────────────────────
@@ -1233,10 +1440,11 @@ pub fn run() {
             let incog_i    = MenuItem::with_id(&handle, "incognito", "Private Mode: OFF", true, None::<&str>)?;
             let menu       = Menu::with_items(&handle, &[&show_i, &incog_i, &quit_i])?;
 
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
-                .tooltip("SnapText — Alt+K")
+            let mut tray_builder = TrayIconBuilder::new().menu(&menu).tooltip("SnapText — Alt+K");
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            tray_builder
                 .on_menu_event({
                     let h = handle.clone();
                     move |app, event| {
@@ -1333,19 +1541,36 @@ pub fn run() {
                 });
             }
 
-            // ── Auto-show on first run so user sees setup screen ────
+            // ── Auto-show on first run / fresh install ─────────────
+            // Detects first run by version: if last_seen_version doesn't match
+            // the current binary version, this is a fresh install or upgrade.
+            // This survives reinstalls because AppData DB persists between installs.
             {
+                const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
                 let state = handle.state::<AppState>();
-                let is_first_run = if let Ok(conn) = state.db.lock() {
-                    db::get_config(&conn, "first_run_done").is_err()
+                let is_fresh = if let Ok(conn) = state.db.lock() {
+                    let seen = db::get_config(&conn, "last_seen_version").unwrap_or_default();
+                    let fresh = seen != CURRENT_VERSION;
+                    if fresh {
+                        let _ = db::set_config(&conn, "last_seen_version", CURRENT_VERSION);
+                        // Also reset first_run_done so the onboarding screen shows
+                        let _ = conn.execute("DELETE FROM config WHERE key = 'first_run_done'", []);
+                    }
+                    fresh
                 } else { true };
 
-                if is_first_run {
-                    if let Some(window) = handle.get_webview_window("main") {
-                        let _ = window.center();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                if is_fresh {
+                    let h = handle.clone();
+                    // Delay 800ms so webview finishes loading before we show and focus
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                        if let Some(window) = h.get_webview_window("main") {
+                            let _ = window.center();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _ = window.set_always_on_top(true);
+                        }
+                    });
                 }
             }
 
@@ -1384,6 +1609,7 @@ pub fn run() {
             get_audit_log,
             toggle_incognito,
             get_incognito,
+            trigger_onboarding_demo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,8 +1,23 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
-const AUTO_HIDE_MS = 8000
 const HOVER_HIDE_MS = 2500
+
+// New users see a faster auto-hide (less intrusive) until they've used the pill 10+ times.
+// After 10 confident uses the full 8s is earned — they know what the pill is.
+function getAutoHideMs(): number {
+  try {
+    const count = parseInt(localStorage.getItem('pill_show_count') || '0', 10)
+    return count < 10 ? 3000 : 8000
+  } catch { return 8000 }
+}
+
+function incrementPillCount() {
+  try {
+    const count = parseInt(localStorage.getItem('pill_show_count') || '0', 10)
+    localStorage.setItem('pill_show_count', String(count + 1))
+  } catch { /* storage unavailable */ }
+}
 
 let hideTimer: ReturnType<typeof setTimeout>
 let isWorking = false
@@ -11,7 +26,7 @@ const LABELS: Record<string, string> = { Reply: 'Reply', Do: 'Do', Correct: 'Fix
 
 function resetAutoHide() {
   clearTimeout(hideTimer)
-  hideTimer = setTimeout(() => invoke('hide_pill'), AUTO_HIDE_MS)
+  hideTimer = setTimeout(() => invoke('hide_pill'), getAutoHideMs())
 }
 
 function setWorking(mode: string) {
@@ -50,6 +65,7 @@ document.addEventListener('visibilitychange', () => {
 listen('pill_show', () => {
   const el = document.getElementById('pill')
   if (el) el.style.opacity = '1'
+  incrementPillCount()
   resetWorking()
   resetAutoHide()
 })

@@ -323,12 +323,12 @@ const SettingsModal = ({ onClose, onKeySave }: {
 
   useEffect(() => {
     Promise.all([
-      invoke<string>('get_ai_mode'),
-      invoke<any>('get_hardware_stats'),
+      invoke<string>('get_ai_mode').catch(() => 'Worker'),
+      invoke<any>('get_hardware_stats').catch(() => ({ ram_gb: 0, cpu_count: 0 })),
       invoke<string>('get_config_value', { key: 'byok_key' }).catch(() => ''),
       invoke<CommReport>('get_communication_score').catch(() => null),
     ]).then(([m, s, k, r]) => {
-      setMode(m.replace(/"/g, '') as any);
+      setMode((m as string).replace(/"/g, '') as any);
       setStats(s);
       setKey(k);
       setReport(r);
@@ -528,7 +528,7 @@ const FirstRun = ({ onDone }: { onDone: () => void }) => (
         boxShadow: '0 0 24px var(--blue-glow)',
       }}
     >
-      Got it — let's go
+      Got it — show me a demo
     </button>
 
     <p style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: '12px', textAlign: 'center' }}>
@@ -559,10 +559,10 @@ function App() {
   const [usage, setUsage] = useState<{ used: number; cap: number }>({ used: 0, cap: FREE_DAILY_CAP })
   const [aiMode, setAiMode] = useState<string>('Worker')
   const [appContext, setAppContext] = useState<string | null>(null)
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pendingAutoGenerate = useRef<Mode | null>(null)
   const lastGenerateTime = useRef(0)
-  const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Refs for stale-closure-safe access inside event listeners
   const selectedModeRef    = useRef<Mode>('Prompt')
@@ -658,9 +658,6 @@ function App() {
         setShowHistory(false)
         setCopied(false)
 
-        // Cancel any pending auto-close
-        if (autoCloseTimer.current) { clearTimeout(autoCloseTimer.current); autoCloseTimer.current = null }
-
         // Auto-generate: for Prompt mode OR when triggered from pill
         if ((mode === 'Prompt' || forced_mode) && text.trim()) {
           pendingAutoGenerate.current = mode
@@ -680,6 +677,10 @@ function App() {
         setTimeout(() => setIsRefined(false), 2000)
       }))
 
+      unlisteners.push(await listen<{ version: string; body: string }>('update_available', e => {
+        setUpdateInfo(e.payload)
+      }))
+
       unlisteners.push(await listen<string>('ai_token', e => setStreamingResult(prev => prev + e.payload)))
       unlisteners.push(await listen('ai_stream_end', () => {
         setIsGenerating(false)
@@ -691,9 +692,6 @@ function App() {
             aiOutput: streamingResultRef.current,
           }
         }
-        // Auto-close overlay 8s after generation completes (user can Tab/copy before then)
-        if (autoCloseTimer.current) clearTimeout(autoCloseTimer.current)
-        autoCloseTimer.current = setTimeout(() => invoke('hide_window'), 8000)
       }))
       unlisteners.push(await listen<string>('ai_error', e => { setError(e.payload); setIsGenerating(false) }))
       unlisteners.push(await listen<string>('sensitive_data_detected', e => {
@@ -775,7 +773,6 @@ function App() {
 
   const handleInsert = async () => {
     if (!streamingResult || isGenerating) return
-    if (autoCloseTimer.current) { clearTimeout(autoCloseTimer.current); autoCloseTimer.current = null }
     // Record accepted feedback for Reply mode before injecting
     if (pendingReplyFeedback.current) {
       invoke('record_reply_feedback', {
@@ -793,6 +790,9 @@ function App() {
   const handleFirstRunDone = async () => {
     await invoke('set_config_value', { key: 'first_run_done', value: '1' }).catch(() => { })
     setFirstRunDone(true)
+    // Fire demo immediately — user sees Reply mode produce a real output in first 30s.
+    // Small delay so the first-run card has time to animate out first.
+    setTimeout(() => invoke('trigger_onboarding_demo').catch(() => {}), 350)
   }
 
   const handleRestoreHistory = (entry: HistoryEntry) => {
@@ -816,13 +816,49 @@ function App() {
   // Priority 4: first-run screen
   if (!firstRunDone) return <FirstRun onDone={handleFirstRunDone} />
 
-  const canGenerate = !!capturedText && !isGenerating && (selectedMode !== 'Custom' || !!customPrompt)
+  const MAX_INPUT_CHARS = 10_000
+  const inputTooLong = capturedText.length > MAX_INPUT_CHARS
+  const canGenerate = !!capturedText && !isGenerating && !inputTooLong && (selectedMode !== 'Custom' || !!customPrompt)
   const isNonLatin = nlpContext && !['Latin', 'Unknown', ''].includes(nlpContext.language.primary_script)
   const isMixed = nlpContext?.language.is_mixed ?? false
-  const isRunningLow = usage.used >= FREE_DAILY_CAP - 2
-  const isAtLimit = usage.used >= usage.cap
+  const remaining = Math.max(0, usage.cap - usage.used)
+  const isRunningLow = remaining <= 5
+  const isAtLimit = remaining === 0
 
   return (
+    <>
+    {/* ── Update notification — sits above the card ─────────── */}
+    <AnimatePresence>
+      {updateInfo && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          style={{
+            background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)',
+            borderRadius: '10px', padding: '8px 12px', marginBottom: '6px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+          }}>
+          <span style={{ fontSize: '11px', color: '#93c5fd', fontWeight: 600 }}>
+            SnapText {updateInfo.version} is available
+          </span>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              onClick={() => { invoke('plugin:updater|install').catch(() => {}); setUpdateInfo(null) }}
+              style={{
+                background: 'var(--blue)', border: 'none', borderRadius: '5px',
+                color: '#fff', fontSize: '10px', fontWeight: 700, padding: '3px 8px', cursor: 'pointer',
+              }}>
+              Update
+            </button>
+            <button onClick={() => setUpdateInfo(null)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '13px', padding: '0 2px' }}>
+              ×
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
     <motion.div className="glass-card" style={{ position: 'relative' }}
       initial={{ scale: 0.95, opacity: 0, y: 8 }} animate={{ scale: 1, opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}>
@@ -876,12 +912,15 @@ function App() {
             <History size={12} />
           </button>
 
-          {/* Priority 3: usage counter — amber at 18+, red at limit */}
-          <span style={{
-            fontSize: '10px', fontWeight: 600,
+          {/* Usage counter — shows remaining, color-coded */}
+          <span title={`${usage.used} used of ${usage.cap} today`} style={{
+            fontSize: '10px', fontWeight: 700, letterSpacing: '-0.01em',
             color: isAtLimit ? '#ef4444' : isRunningLow ? '#f59e0b' : 'var(--text-dim)',
+            background: isAtLimit ? 'rgba(239,68,68,0.1)' : isRunningLow ? 'rgba(245,158,11,0.1)' : 'rgba(255,255,255,0.05)',
+            border: `1px solid ${isAtLimit ? 'rgba(239,68,68,0.25)' : isRunningLow ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.08)'}`,
+            borderRadius: '5px', padding: '2px 6px',
           }}>
-            {usage.used}/{usage.cap}
+            {isAtLimit ? '0 left' : `${remaining} left`}
           </span>
 
           <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
@@ -978,7 +1017,24 @@ function App() {
               {capturedText ? 'Ready — press Transform or Ctrl+↵' : 'Waiting for captured text…'}
             </span>
         }
-        {error && <div style={{ color: '#ef4444', marginTop: '8px', fontSize: '12px' }}>⚠ {error}</div>}
+        {inputTooLong && (
+          <div style={{ color: '#f59e0b', marginTop: '8px', fontSize: '12px' }}>
+            ⚠ Text too long ({capturedText.length.toLocaleString()} chars). Select fewer than {MAX_INPUT_CHARS.toLocaleString()} characters.
+          </div>
+        )}
+        {!inputTooLong && error && (
+          <div style={{ color: '#ef4444', marginTop: '8px', fontSize: '12px' }}>
+            ⚠ {(error.includes('503') || error.includes('UNAVAILABLE') || error.includes('high demand') || error.includes('busy'))
+              ? 'Gemini is overloaded — please try again in a moment'
+              : error}
+            {(error.includes('Network') || error.includes('timed out') || error.includes('Worker') || error.includes('503') || error.includes('busy')) && (
+              <button onClick={() => { setError(''); lastGenerateTime.current = 0; handleGenerate() }}
+                style={{ marginLeft: '8px', background: 'none', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', fontSize: '11px', padding: '1px 6px', cursor: 'pointer' }}>
+                Retry
+              </button>
+            )}
+          </div>
+        )}
         {sensitiveNotice && <div style={{ color: '#f59e0b', marginTop: '8px', fontSize: '11px', opacity: 0.8 }}>🔒 {sensitiveNotice}</div>}
       </div>
 
@@ -1019,6 +1075,7 @@ function App() {
         <span>Tab Insert</span>
       </div>
     </motion.div>
+    </>
   )
 }
 
